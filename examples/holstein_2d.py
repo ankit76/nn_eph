@@ -30,12 +30,12 @@ g = 2.
 ham = hamiltonians.holstein_2d(omega, g)
 
 gamma = jnp.array([ g / omega / n_sites for _ in range(len(lattice.shell_distances)) ])
-model = models.MLP([50, 1])
-model_input = jnp.zeros(2*n_sites)
+reference = wavefunctions.merrifield(gamma.size)
+model = models.CNN([ 4, 2, 1 ], [ (2,2), (2,2), (2,2) ])
+model_input = jnp.zeros((1, l_y, l_x, 2))
 nn_parameters = model.init(random.PRNGKey(0), model_input, mutable=True)
 n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters))
 parameters = [ gamma, nn_parameters ]
-reference = wavefunctions.merrifield(gamma.size)
 wave = wavefunctions.nn_jastrow(model.apply, reference, n_nn_parameters)
 
 seed = 789941
