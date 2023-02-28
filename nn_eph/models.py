@@ -27,6 +27,7 @@ class CNN(nn.Module):
 
   @nn.compact
   def __call__(self, x):
+    x = x.reshape(1, *x.shape)
     for layer in range(len(self.channels)):
       x = nn.Conv(features=self.channels[layer], kernel_size=self.kernel_sizes[layer], padding='CIRCULAR')(x)
       x = self.activation(x)

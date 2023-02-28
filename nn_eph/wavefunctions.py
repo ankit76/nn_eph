@@ -102,8 +102,8 @@ class nn_jastrow():
   def get_input(self, elec_pos, phonon_occ, lattice_shape):
     elec_pos_ar = jnp.zeros(lattice_shape)
     elec_pos_ar = elec_pos_ar.at[elec_pos].set(1)
-    input_ar = jnp.array([ elec_pos_ar, phonon_occ ])
-    return input_ar.reshape(1, *input_ar.shape)
+    input_ar = jnp.stack([ elec_pos_ar, phonon_occ ], axis=-1)
+    return input_ar
 
   def serialize(self, parameters):
     flat_tree = tree_util.tree_flatten(parameters[1])[0]
@@ -154,8 +154,6 @@ if __name__ == "__main__":
   elec_pos = 0
   phonon_occ = jnp.array(np.random.randint(3, size=(n_sites,)))
   gamma = jnp.array(np.random.rand(n_sites // 2 + 1))
-  #parameters = gamma
-  #wave = ssh_merrifield(gamma.size)
   model = models.MLP([5, 1])
   model_input = jnp.zeros(2*n_sites)
   nn_parameters = model.init(random.PRNGKey(0), model_input, mutable=True)
@@ -165,20 +163,3 @@ if __name__ == "__main__":
   wave = nn_jastrow(model.apply, reference, n_nn_parameters)
   print(wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice))
 
-  exit()
-
-  l_x, l_y = 2, 2
-  n_sites = l_x * l_y
-  lattice = lattices.two_dimensional_grid(l_x, l_y)
-  np.random.seed(3)
-  elec_pos = (1, 0)
-  phonon_occ = jnp.array(np.random.randint(3, size=(l_y, l_x)))
-  gamma = jnp.array(np.random.rand(len(lattice.shell_distances)))
-  model = models.MLP([5, 1])
-  model_input = jnp.zeros(2*n_sites)
-  nn_parameters = model.init(random.PRNGKey(0), model_input, mutable=True)
-  #parameters = [ gamma, nn_parameters ]
-  #reference = merrifield()
-  #wave = nn_jastrow(model.apply, reference)
-  parameters = gamma
-  wave = merrifield(gamma.size)
