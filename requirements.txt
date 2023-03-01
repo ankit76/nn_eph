@@ -1,0 +1,6 @@
+numpy 
+scipy 
+jax
+jaxlib
+mpi4py
+flax
