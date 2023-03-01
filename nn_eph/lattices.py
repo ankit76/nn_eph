@@ -74,14 +74,3 @@ class two_dimensional_grid():
     return hash((self.l_x, self.l_y, self.shape, self.shell_distances, self.sites, self.bonds))
 
 
-if __name__ == "__main__":
-  n_sites = 2
-  lattice = one_dimensional_chain(n_sites)
-  print(lattice.get_distance(0, 0))
-  print(lattice.bonds)
-  print(lattice.get_neighboring_bonds(0))
-
-  l_x, l_y = 4, 4
-  lattice = two_dimensional_grid(l_x, l_y)
-  print(lattice.get_distance((0,0), (0,1)))
-

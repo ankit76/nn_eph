@@ -146,20 +146,3 @@ class nn_jastrow():
   def __hash__(self):
     return hash((self.nn_apply, self.reference, self.n_parameters))
 
-if __name__ == "__main__":
-  import lattices, models
-  n_sites = 2
-  lattice = lattices.one_dimensional_chain(n_sites)
-  np.random.seed(3)
-  elec_pos = 0
-  phonon_occ = jnp.array(np.random.randint(3, size=(n_sites,)))
-  gamma = jnp.array(np.random.rand(n_sites // 2 + 1))
-  model = models.MLP([5, 1])
-  model_input = jnp.zeros(2*n_sites)
-  nn_parameters = model.init(random.PRNGKey(0), model_input, mutable=True)
-  n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters))
-  parameters = [ gamma, nn_parameters ]
-  reference = ssh_merrifield(gamma.size)
-  wave = nn_jastrow(model.apply, reference, n_nn_parameters)
-  print(wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice))
-

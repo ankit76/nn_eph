@@ -33,11 +33,3 @@ class CNN(nn.Module):
       x = self.activation(x)
     return jnp.array([jnp.sum(x)])
 
-if __name__ == "__main__":
-  #model = MLP([ 2, 1 ])
-  n_sites = 10
-  model = CNN([ 5, 1, n_sites // 2 + 1 ], [ (4,), (4,) ])
-  model_input = jnp.zeros((1, n_sites, 1))
-  output = model.apply(nn_parameters, model_input)
-  #fnn_input = jnp.ones((1,))
-
