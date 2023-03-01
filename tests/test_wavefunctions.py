@@ -38,6 +38,22 @@ def test_merrifield_overlap():
   overlap_ex = wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice)
   assert np.allclose(overlap_ex, overlap * gamma[2])
 
+def test_merrifield_overlap_map():
+  n_sites = 4
+  lattice = lattices.one_dimensional_chain(n_sites)
+  np.random.seed(seed)
+
+  gamma = jnp.array(np.random.rand(n_sites // 2 + 1))
+  wave = wavefunctions.merrifield(gamma.size)
+
+  elec_pos = jnp.array([0, 1])
+  phonon_occ = jnp.array([ 1, 3, 0, 2 ])
+  overlap = wave.calc_overlap_map(elec_pos, phonon_occ, gamma, lattice)
+
+  phonon_occ = jnp.array([ 1, 3, 0, 3 ])
+  overlap_ex = wave.calc_overlap_map(elec_pos, phonon_occ, gamma, lattice)
+  assert np.allclose(overlap_ex, overlap * (gamma[1] + gamma[2]))
+
 def test_ssh_merrifield_overlap():
   n_sites = 2
   lattice = lattices.one_dimensional_chain(n_sites)
@@ -125,8 +141,29 @@ def test_nn_jastrow_overlap():
   overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
   assert np.allclose(overlap, 0.04981814914850025)
 
+def test_nn_jastrow_overlap_map():
+  n_sites = 4
+  lattice = lattices.one_dimensional_chain(n_sites)
+  np.random.seed(seed)
+
+  gamma = jnp.array(np.random.rand(n_sites//2 + 1))
+  reference = wavefunctions.merrifield(gamma.size)
+  model = models.CNN([ 4, 1 ], [ (2,), (2,) ])
+  model_input = jnp.zeros((1, 2, 2))
+  nn_parameters = model.init(random.PRNGKey(seed), model_input, mutable=True)
+  n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters))
+  parameters = [ gamma, nn_parameters ]
+  wave = wavefunctions.nn_jastrow(model.apply, reference, n_nn_parameters)
+
+  elec_pos = jnp.array([0, 2])
+  phonon_occ = jnp.array([ 2, 0, 1, 0 ])
+  overlap = wave.calc_overlap_map(elec_pos, phonon_occ, parameters, lattice)
+  assert np.allclose(overlap, 1.0845215814326277)
+
 if __name__ == "__main__":
   test_merrifield_overlap()
+  test_merrifield_overlap_map()
   test_ssh_merrifield_overlap()
   test_nn_jastrow_overlap()
+  test_nn_jastrow_overlap_map()
 

@@ -21,10 +21,8 @@ n_nn_parameters_1d = sum(x.size for x in tree_util.tree_leaves(nn_parameters_1d)
 parameters_1d = [ gamma_1d, nn_parameters_1d ]
 wave_h_1d = wavefunctions.nn_jastrow(model_1d.apply, reference_h_1d, n_nn_parameters_1d)
 wave_s_1d = wavefunctions.nn_jastrow(model_1d.apply, reference_s_1d, n_nn_parameters_1d)
-elec_pos = 0
-phonon_occ = jnp.array([ 2, 0, 1, 0 ])
-walker_1d = jnp.array([ elec_pos ] + list(phonon_occ))
-
+walker_1d = jnp.array([ 0 ] + [ 2, 0, 1, 0 ])
+walker_1d_2 = jnp.array([ 0, 1 ] + [ 2, 0, 1, 0 ])
 
 np.random.seed(seed)
 l_x, l_y = 4, 4
@@ -39,9 +37,8 @@ n_nn_parameters_2d = sum(x.size for x in tree_util.tree_leaves(nn_parameters_2d)
 parameters_2d = [ gamma_2d, nn_parameters_2d ]
 wave_2d = wavefunctions.nn_jastrow(model_2d.apply, reference_2d, n_nn_parameters_2d)
 
-elec_pos = (0, 0)
 phonon_occ = jnp.array([[ np.random.randint(2) for _ in range(l_x) ] for _ in range(l_y) ])
-walker_2d = [ elec_pos, phonon_occ ]
+walker_2d = [ (0, 0), phonon_occ ]
 
 
 def test_holstein_1d():
@@ -53,6 +50,16 @@ def test_holstein_1d():
   assert np.allclose(sum(overlap_gradient), 28.137563833940348)
   assert np.allclose(weight, 0.03917701580761051)
   assert sum(walker) == 2
+
+def test_holstein_1d_2():
+  ham = hamiltonians.holstein_1d_2(1., 1., 1.)
+  random_number = 0.5
+  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_1d_2, parameters_1d, wave_h_1d, lattice_1d, random_number)
+  #assert np.allclose(energy, -32.4191830535864)
+  #assert np.allclose(qp_weight, 0.0)
+  #assert np.allclose(sum(overlap_gradient), 28.137563833940348)
+  #assert np.allclose(weight, 0.03917701580761051)
+  #assert sum(walker) == 2
 
 def test_long_range_1d():
   ham = hamiltonians.long_range_1d(1., 1., 1.)
@@ -94,6 +101,7 @@ def test_long_range_2d():
 
 if __name__ == "__main__":
   test_holstein_1d()
+  test_holstein_1d_2()
   test_long_range_1d()
   test_ssh_1d()
   test_holstein_2d()
