@@ -61,6 +61,33 @@ class merrifield():
   def __hash__(self):
     return hash(self.n_parameters)
 
+@dataclass
+class ee_jastrow():
+  n_parameters: int
+
+  def serialize(self, parameters):
+    return parameters
+
+  def update_parameters(self, parameters, update):
+    parameters += update
+    return parameters
+
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
+    dist = lattice.get_distance(elec_pos[0], elec_pos[1])
+    overlap = jnp.exp(-parameters[dist])# * (jnp.sum(phonon_occ) == 0)
+    return overlap
+
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+    value, gradient = value_and_grad(self.calc_overlap_map, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
+    gradient = self.serialize(gradient)
+    gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
+    return gradient / value
+
+  def __hash__(self):
+    return hash(self.n_parameters)
+
 
 @dataclass
 class ssh_merrifield():
@@ -124,15 +151,6 @@ class nn_jastrow():
     input_ar = jnp.stack([ elec_pos_ar, phonon_occ ], axis=-1)
     return input_ar
 
-  # TODO: needs to be changed for ssh > 1d, and for 2 sites
-  @partial(jit, static_argnums=(0, 3))
-  def get_input_2(self, elec_pos, phonon_occ, lattice_shape):
-    elec_pos_ar = jnp.zeros(lattice_shape)
-    elec_pos_ar = elec_pos_ar.at[elec_pos[0]].add(1)
-    elec_pos_ar = elec_pos_ar.at[elec_pos[1]].add(1)
-    input_ar = jnp.stack([ elec_pos_ar, phonon_occ ], axis=-1)
-    return input_ar
-
   def serialize(self, parameters):
     flat_tree = tree_util.tree_flatten(parameters[1])[0]
     serialized = jnp.reshape(flat_tree[0], (-1))
@@ -165,6 +183,56 @@ class nn_jastrow():
     return jastrow * ref_overlap
 
   @partial(jit, static_argnums=(0, 4))
+  def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+    value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
+    gradient = self.serialize(gradient)
+    gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
+    return gradient / value
+
+  def __hash__(self):
+    return hash((self.nn_apply, self.reference, self.n_parameters))
+
+
+@dataclass
+class nn_jastrow_2():
+  nn_apply: Callable
+  reference: Any
+  ee_jastrow: Any
+  n_parameters: int
+
+  def __post_init__(self):
+    self.n_parameters += self.reference.n_parameters + self.ee_jastrow.n_parameters
+
+  # TODO: needs to be changed for ssh > 1d, and for 2 sites
+  @partial(jit, static_argnums=(0, 3))
+  def get_input_2(self, elec_pos, phonon_occ, lattice_shape):
+    elec_pos_ar = jnp.zeros(lattice_shape)
+    elec_pos_ar = elec_pos_ar.at[elec_pos[0]].add(1)
+    elec_pos_ar = elec_pos_ar.at[elec_pos[1]].add(1)
+    input_ar = jnp.stack([ elec_pos_ar, phonon_occ ], axis=-1)
+    return input_ar
+
+  def serialize(self, parameters):
+    flat_tree = tree_util.tree_flatten(parameters[1])[0]
+    serialized = jnp.reshape(flat_tree[0], (-1))
+    for params in flat_tree[1:]:
+      serialized = jnp.concatenate((serialized, jnp.reshape(params, -1)))
+    serialized = jnp.concatenate((self.reference.serialize(parameters[0]), serialized, self.ee_jastrow.serialize(parameters[2])))
+    return serialized
+
+  # update is serialized, parameters are not
+  def update_parameters(self, parameters, update):
+    parameters[0] = self.reference.update_parameters(parameters[0], update[:self.reference.n_parameters])
+    flat_tree, tree = tree_util.tree_flatten(parameters[1])
+    counter = self.reference.n_parameters
+    for i in range(len(flat_tree)):
+      flat_tree[i] += update[counter: counter + flat_tree[i].size].reshape(flat_tree[i].shape)
+      counter += flat_tree[i].size
+    parameters[1] = tree_util.tree_unflatten(tree, flat_tree)
+    parameters[2] = self.reference.update_parameters(parameters[2], update[counter:])
+    return parameters
+
+  @partial(jit, static_argnums=(0, 4))
   def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
     nn = parameters[1]
     inputs = self.get_input_2(elec_pos, phonon_occ, lattice.shape)
@@ -172,15 +240,9 @@ class nn_jastrow():
     jastrow = jnp.exp(outputs[0])
 
     ref_overlap = self.reference.calc_overlap_map(elec_pos, phonon_occ, parameters[0], lattice)
+    ee_jastrow_overlap = self.ee_jastrow.calc_overlap_map(elec_pos, phonon_occ, parameters[2], lattice)
 
-    return jastrow * ref_overlap
-
-  @partial(jit, static_argnums=(0, 4))
-  def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
-    value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
-    gradient = self.serialize(gradient)
-    gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
-    return gradient / value
+    return ee_jastrow_overlap * jastrow * ref_overlap
 
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
@@ -190,5 +252,4 @@ class nn_jastrow():
     return gradient / value
 
   def __hash__(self):
-    return hash((self.nn_apply, self.reference, self.n_parameters))
-
+    return hash((self.nn_apply, self.reference, self.ee_jastrow, self.n_parameters))

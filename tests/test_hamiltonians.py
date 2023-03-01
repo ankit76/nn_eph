@@ -54,12 +54,12 @@ def test_holstein_1d():
 def test_holstein_1d_2():
   ham = hamiltonians.holstein_1d_2(1., 1., 1.)
   random_number = 0.5
-  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_1d_2, parameters_1d, wave_h_1d, lattice_1d, random_number)
-  #assert np.allclose(energy, -32.4191830535864)
-  #assert np.allclose(qp_weight, 0.0)
-  #assert np.allclose(sum(overlap_gradient), 28.137563833940348)
-  #assert np.allclose(weight, 0.03917701580761051)
-  #assert sum(walker) == 2
+  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_1d_2, gamma_1d, reference_h_1d, lattice_1d, random_number)
+  assert np.allclose(energy, -18.943967797424914)
+  assert np.allclose(qp_weight, 0.0)
+  assert np.allclose(sum(overlap_gradient), 21.620797603398334)
+  assert np.allclose(weight, 0.052438402703666474)
+  assert sum(walker) == 5
 
 def test_long_range_1d():
   ham = hamiltonians.long_range_1d(1., 1., 1.)
