@@ -4,7 +4,7 @@ os.environ['JAX_ENABLE_X64'] = 'True'
 import pytest
 import numpy as np
 from jax import random, tree_util, numpy as jnp
-from nn_eph import wavefunctions, lattices, models, hamiltonians
+from nn_eph import wavefunctions, lattices, models, hamiltonians, hamiltonians_2
 
 seed = 3455
 
@@ -52,7 +52,7 @@ def test_holstein_1d():
   assert sum(walker) == 2
 
 def test_holstein_1d_2():
-  ham = hamiltonians.holstein_1d_2(1., 1., 1.)
+  ham = hamiltonians_2.holstein_1d_2(1., 1., 1.)
   random_number = 0.5
   energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_1d_2, gamma_1d, reference_h_1d, lattice_1d, random_number)
   assert np.allclose(energy, -18.943967797424914)
