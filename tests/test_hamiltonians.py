@@ -41,6 +41,21 @@ phonon_occ = jnp.array([[ np.random.randint(2) for _ in range(l_x) ] for _ in ra
 walker_2d = [ (0, 0), phonon_occ ]
 walker_2d_2 = [ [ (0, 0), (0, 1) ], phonon_occ ]
 
+np.random.seed(seed)
+l_x, l_y, l_z = 3, 3, 3
+n_sites_3d = l_x * l_y * l_z
+lattice_3d = lattices.three_dimensional_grid(l_x, l_y, l_z)
+gamma_3d = jnp.array(np.random.rand(len(lattice_3d.shell_distances)))
+reference_3d = wavefunctions.merrifield(gamma_3d.size)
+model_3d = models.MLP([5, 1])
+model_input_3d = jnp.zeros(2*n_sites_3d)
+nn_parameters_3d = model_3d.init(random.PRNGKey(seed), model_input_3d, mutable=True)
+n_nn_parameters_3d = sum(x.size for x in tree_util.tree_leaves(nn_parameters_3d))
+parameters_3d = [ gamma_3d, nn_parameters_3d ]
+wave_3d = wavefunctions.nn_jastrow(model_3d.apply, reference_3d, n_nn_parameters_3d)
+
+phonon_occ = jnp.array([[[ np.random.randint(2) for _ in range(l_x) ] for _ in range(l_y) ] for _ in range(l_z) ])
+walker_3d = [ (0, 0, 0), phonon_occ ]
 
 def test_holstein_1d():
   ham = hamiltonians.holstein_1d(1., 1.)
@@ -119,6 +134,15 @@ def test_long_range_2d_2():
   assert np.allclose(sum(overlap_gradient), 19.116589584055067)
   assert np.allclose(weight, 0.034140078029097465)
 
+def test_holstein_3d():
+  ham = hamiltonians.holstein_3d(1., 1.)
+  random_number = 0.5
+  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_3d, parameters_3d, wave_3d, lattice_3d, random_number)
+  assert np.allclose(energy, -4.785211306275675)
+  assert np.allclose(qp_weight, 0.0)
+  assert np.allclose(sum(overlap_gradient), 18.07855867695138)
+  assert np.allclose(weight, 0.06343059987847004)
+
 if __name__ == "__main__":
   test_holstein_1d()
   test_holstein_1d_2()
@@ -128,4 +152,5 @@ if __name__ == "__main__":
   test_holstein_2d()
   test_long_range_2d()
   test_long_range_2d_2()
+  test_holstein_3d()
 

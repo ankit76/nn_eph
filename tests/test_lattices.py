@@ -18,6 +18,11 @@ def test_size():
   assert len(lattice.sites) == l_x * l_y
   assert len(lattice.shell_distances) == 6
 
+  l_x, l_y, l_z = 3, 2, 2
+  lattice = lattices.three_dimensional_grid(l_x, l_y, l_z)
+  assert len(lattice.sites) == l_x * l_y * l_z
+  assert len(lattice.shell_distances) == 4
+
 def test_get_distance():
   n_sites = 4
   lattice = lattices.one_dimensional_chain(n_sites)
@@ -26,6 +31,10 @@ def test_get_distance():
   l_x, l_y = 5, 4
   lattice = lattices.two_dimensional_grid(l_x, l_y)
   assert lattice.get_distance((0,0), (1,4)) == 2
+
+  l_x, l_y, l_z = 3, 2, 2
+  lattice = lattices.three_dimensional_grid(l_x, l_y, l_z)
+  assert lattice.get_distance((0,0,0), (0,0,2)) == 1
 
 def test_get_neighbors():
   n_sites = 4

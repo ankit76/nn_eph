@@ -74,3 +74,50 @@ class two_dimensional_grid():
     return hash((self.l_x, self.l_y, self.shape, self.shell_distances, self.sites, self.bonds))
 
 
+@dataclass
+class three_dimensional_grid():
+  l_x: int
+  l_y: int
+  l_z: int
+  shape: tuple = None
+  shell_distances: Sequence = None
+  sites: Sequence = None
+  bonds: Sequence = None
+
+  def __post_init__(self):
+    self.shape = (self.l_x, self.l_y, self.l_z)
+    distances = [ ]
+    for x in range(self.l_x//2+1):
+      for y in range(self.l_y//2+1):
+        for z in range(self.l_z//2+1):
+          dist = x**2 + y**2 + z**2
+          distances.append(dist)
+    distances = [*set(distances)]
+    distances.sort()
+    self.shell_distances = tuple(distances)
+    self.sites = tuple([ (i // (self.l_x * self.l_y), (i % (self.l_x * self.l_y)) // self.l_x, (i % (self.l_x * self.l_y)) % self.l_x) for i in range(self.l_x * self.l_y * self.l_z) ])
+    # TODO: fix bonds
+    #self.bonds = tuple([ (i // self.l_x, i % self.l_x) for i in range(self.l_x * self.l_y) ])
+
+  def get_distance(self, pos_1, pos_2):
+    dist_z = jnp.min(jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.l_z - jnp.abs(pos_1[0] - pos_2[0])]))
+    dist_y = jnp.min(jnp.array([jnp.abs(pos_1[1] - pos_2[1]), self.l_y - jnp.abs(pos_1[1] - pos_2[1])]))
+    dist_x = jnp.min(jnp.array([jnp.abs(pos_1[2] - pos_2[2]), self.l_x - jnp.abs(pos_1[2] - pos_2[2])]))
+    dist = dist_x**2 + dist_y**2 + dist_z**2
+    shell_number = jnp.searchsorted(jnp.array(self.shell_distances), dist)
+    return shell_number
+
+  def get_bond_distance(self, pos_1, pos_2):
+    #dist_y = jnp.min(jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.l_y - jnp.abs(pos_1[0] - pos_2[0])]))
+    #dist_x = jnp.min(jnp.array([jnp.abs(pos_1[1] - pos_2[1]), self.l_x - jnp.abs(pos_1[1] - pos_2[1])]))
+    #dist = dist_x**2 + dist_y**2
+    #shell_number = jnp.searchsorted(jnp.array(self.shell_distances), dist)
+    #return shell_number
+    return 0
+
+  # TODO: fix this
+  def get_neighboring_bonds(self, pos):
+    return jnp.array([ pos ])
+
+  def __hash__(self):
+    return hash((self.l_x, self.l_y, self.l_z, self.shape, self.shell_distances, self.sites, self.bonds))
