@@ -330,29 +330,29 @@ class long_range_2d():
     ratios = jnp.zeros((4 + 2 * n_sites,))
 
     # electron hops
-    new_elec_pos = ( (elec_pos[0] + 1) % l_y, elec_pos[1] )
-    new_overlap = wave.calc_overlap(new_elec_pos, phonon_occ, parameters, lattice)
-    ratio_0_y = lax.cond(l_y > 1, lambda x: x / overlap, lambda x: 0., new_overlap)
-    energy -= ratio_0_y
-    ratios = ratios.at[0].set(ratio_0_y)
-
-    new_elec_pos = ( (elec_pos[0] - 1) % l_y, elec_pos[1] )
-    new_overlap = wave.calc_overlap(new_elec_pos, phonon_occ, parameters, lattice)
-    ratio_1_y = lax.cond(l_y > 2, lambda x: x / overlap, lambda x: 0., new_overlap)
-    energy -= ratio_1_y
-    ratios = ratios.at[1].set(ratio_1_y)
-
     new_elec_pos = ( elec_pos[0], (elec_pos[1] + 1) % l_x )
     new_overlap = wave.calc_overlap(new_elec_pos, phonon_occ, parameters, lattice)
     ratio_0_x = lax.cond(l_x > 1, lambda x: x / overlap, lambda x: 0., new_overlap)
     energy -= ratio_0_x
-    ratios = ratios.at[2].set(ratio_0_x)
+    ratios = ratios.at[0].set(ratio_0_x)
 
     new_elec_pos = ( elec_pos[0], (elec_pos[1] - 1) % l_x )
     new_overlap = wave.calc_overlap(new_elec_pos, phonon_occ, parameters, lattice)
     ratio_1_x = lax.cond(l_x > 2, lambda x: x / overlap, lambda x: 0., new_overlap)
     energy -= ratio_1_x
-    ratios = ratios.at[3].set(ratio_1_x)
+    ratios = ratios.at[1].set(ratio_1_x)
+
+    new_elec_pos = ( (elec_pos[0] + 1) % l_y, elec_pos[1] )
+    new_overlap = wave.calc_overlap(new_elec_pos, phonon_occ, parameters, lattice)
+    ratio_0_y = lax.cond(l_y > 1, lambda x: x / overlap, lambda x: 0., new_overlap)
+    energy -= ratio_0_y
+    ratios = ratios.at[2].set(ratio_0_y)
+
+    new_elec_pos = ( (elec_pos[0] - 1) % l_y, elec_pos[1] )
+    new_overlap = wave.calc_overlap(new_elec_pos, phonon_occ, parameters, lattice)
+    ratio_1_y = lax.cond(l_y > 2, lambda x: x / overlap, lambda x: 0., new_overlap)
+    energy -= ratio_1_y
+    ratios = ratios.at[3].set(ratio_1_y)
 
     # e_ph coupling
     def scanned_fun(carry, x):

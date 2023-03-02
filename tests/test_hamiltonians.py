@@ -39,6 +39,7 @@ wave_2d = wavefunctions.nn_jastrow(model_2d.apply, reference_2d, n_nn_parameters
 
 phonon_occ = jnp.array([[ np.random.randint(2) for _ in range(l_x) ] for _ in range(l_y) ])
 walker_2d = [ (0, 0), phonon_occ ]
+walker_2d_2 = [ [ (0, 0), (0, 1) ], phonon_occ ]
 
 
 def test_holstein_1d():
@@ -52,7 +53,7 @@ def test_holstein_1d():
   assert sum(walker) == 2
 
 def test_holstein_1d_2():
-  ham = hamiltonians_2.holstein_1d_2(1., 1., 1.)
+  ham = hamiltonians_2.holstein_1d(1., 1., 1.)
   random_number = 0.5
   energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_1d_2, gamma_1d, reference_h_1d, lattice_1d, random_number)
   assert np.allclose(energy, -18.943967797424914)
@@ -70,6 +71,16 @@ def test_long_range_1d():
   assert np.allclose(sum(overlap_gradient), 28.137563833940348)
   assert np.allclose(weight, 0.0360180205080746)
   assert sum(walker) == 2
+
+def test_long_range_1d_2():
+  ham = hamiltonians_2.long_range_1d(1., 1., 1., 1.)
+  random_number = 0.5
+  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_1d_2, gamma_1d, reference_h_1d, lattice_1d, random_number)
+  assert np.allclose(energy, -20.63895349095183)
+  assert np.allclose(qp_weight, 0.0)
+  assert np.allclose(sum(overlap_gradient), 21.620797603398334)
+  assert np.allclose(weight, 0.04611878427324339)
+  assert sum(walker) == 5
 
 def test_ssh_1d():
   ham = hamiltonians.ssh_1d(1., 1.)
@@ -99,11 +110,22 @@ def test_long_range_2d():
   assert np.allclose(sum(overlap_gradient), 20.663823636174804)
   assert np.allclose(weight, 0.024041890740621793)
 
+def test_long_range_2d_2():
+  ham = hamiltonians_2.long_range_2d(1., 1., 1., 1.)
+  random_number = 0.5
+  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_2d_2, gamma_2d, reference_2d, lattice_2d, random_number)
+  assert np.allclose(energy, -6.061611058904939)
+  assert np.allclose(qp_weight, 0.0)
+  assert np.allclose(sum(overlap_gradient), 19.116589584055067)
+  assert np.allclose(weight, 0.034140078029097465)
+
 if __name__ == "__main__":
   test_holstein_1d()
   test_holstein_1d_2()
   test_long_range_1d()
+  test_long_range_1d_2()
   test_ssh_1d()
   test_holstein_2d()
   test_long_range_2d()
+  test_long_range_2d_2()
 
