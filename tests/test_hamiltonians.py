@@ -30,6 +30,7 @@ n_sites_2d = l_x * l_y
 lattice_2d = lattices.two_dimensional_grid(l_x, l_y)
 gamma_2d = jnp.array(np.random.rand(len(lattice_2d.shell_distances)))
 reference_2d = wavefunctions.merrifield(gamma_2d.size)
+
 model_2d = models.MLP([5, 1])
 model_input_2d = jnp.zeros(2*n_sites_2d)
 nn_parameters_2d = model_2d.init(random.PRNGKey(seed), model_input_2d, mutable=True)
@@ -40,6 +41,19 @@ wave_2d = wavefunctions.nn_jastrow(model_2d.apply, reference_2d, n_nn_parameters
 phonon_occ = jnp.array([[ np.random.randint(2) for _ in range(l_x) ] for _ in range(l_y) ])
 walker_2d = [ (0, 0), phonon_occ ]
 walker_2d_2 = [ [ (0, 0), (0, 1) ], phonon_occ ]
+
+gamma_s_2d = jnp.array(np.random.rand(len(lattice_2d.bond_shell_distances)))
+reference_s_2d = wavefunctions.ssh_merrifield(gamma_s_2d.size)
+model_2d = models.MLP([5, 1])
+model_input_2d = jnp.zeros(3*n_sites_2d)
+nn_parameters_s_2d = model_2d.init(random.PRNGKey(seed), model_input_2d, mutable=True)
+n_nn_parameters_2d = sum(x.size for x in tree_util.tree_leaves(nn_parameters_s_2d))
+parameters_s_2d = [ gamma_s_2d, nn_parameters_s_2d ]
+wave_s_2d = wavefunctions.nn_jastrow(model_2d.apply, reference_s_2d, n_nn_parameters_2d)
+
+phonon_occ_s = jnp.array([[[ np.random.randint(2) for _ in range(l_x) ] for _ in range(l_y) ] for _  in range(2) ])
+walker_s_2d = [ (0, 0), phonon_occ_s ]
+walker_s_2d_2 = [ [ (0, 0), (0, 1) ], phonon_occ_s ]
 
 np.random.seed(seed)
 l_x, l_y, l_z = 3, 3, 3
@@ -116,6 +130,15 @@ def test_holstein_2d():
   assert np.allclose(sum(overlap_gradient), 20.663823636174804)
   assert np.allclose(weight, 0.10411520289333714)
 
+def test_ssh_2d():
+  ham = hamiltonians.ssh_2d(1., 1.)
+  random_number = 0.5
+  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_s_2d, parameters_s_2d, wave_s_2d, lattice_2d, random_number)
+  assert np.allclose(energy, -49.956671130407884)
+  assert np.allclose(qp_weight, 0.0)
+  assert np.allclose(sum(overlap_gradient), 399.1125417937265)
+  assert np.allclose(weight, 0.015636617084037848)
+
 def test_long_range_2d():
   ham = hamiltonians.long_range_2d(1., 1., 1.)
   random_number = 0.5
@@ -150,6 +173,7 @@ if __name__ == "__main__":
   test_long_range_1d_2()
   test_ssh_1d()
   test_holstein_2d()
+  test_ssh_2d()
   test_long_range_2d()
   test_long_range_2d_2()
   test_holstein_3d()

@@ -104,8 +104,7 @@ class ssh_merrifield():
   def calc_overlap(self, elec_pos, phonon_occ, parameters, lattice):
     # carry: [ overlap, bond_position ]
     def scanned_fun(carry, x):
-      # TODO: needs to be changed for > 1d
-      dist = lattice.get_distance(carry[1], x)
+      dist = lattice.get_bond_distance(carry[1], x)
       carry[0] *= (parameters[dist])**(phonon_occ[(*x,)])
       return carry, x
 
@@ -143,12 +142,12 @@ class nn_jastrow():
   def __post_init__(self):
     self.n_parameters += self.reference.n_parameters
 
-  # TODO: needs to be changed for ssh > 1d, and for 2 sites
+  # TODO: needs to be changed for 2 sites
   @partial(jit, static_argnums=(0, 3))
   def get_input(self, elec_pos, phonon_occ, lattice_shape):
     elec_pos_ar = jnp.zeros(lattice_shape)
     elec_pos_ar = elec_pos_ar.at[elec_pos].set(1)
-    input_ar = jnp.stack([ elec_pos_ar, phonon_occ ], axis=-1)
+    input_ar = jnp.stack([ elec_pos_ar, *phonon_occ.reshape(-1, *lattice_shape) ], axis=-1)
     return input_ar
 
   def serialize(self, parameters):
@@ -209,7 +208,7 @@ class nn_jastrow_2():
     elec_pos_ar = jnp.zeros(lattice_shape)
     elec_pos_ar = elec_pos_ar.at[elec_pos[0]].add(1)
     elec_pos_ar = elec_pos_ar.at[elec_pos[1]].add(1)
-    input_ar = jnp.stack([ elec_pos_ar, phonon_occ ], axis=-1)
+    input_ar = jnp.stack([ elec_pos_ar, *phonon_occ.reshape(-1, *lattice_shape) ], axis=-1)
     return input_ar
 
   def serialize(self, parameters):

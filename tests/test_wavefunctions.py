@@ -84,6 +84,17 @@ def test_ssh_merrifield_overlap():
   overlap_ex = wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice)
   assert np.allclose(overlap_ex, overlap * gamma[0])
 
+  l_x, l_y = 3, 3
+  lattice = lattices.two_dimensional_grid(l_x, l_y)
+
+  gamma = jnp.array(np.random.rand(len(lattice.bond_shell_distances)))
+  wave = wavefunctions.ssh_merrifield(gamma.size)
+
+  elec_pos = (0, 0)
+  phonon_occ = jnp.array([[[ np.random.randint(2) for _ in range(l_x) ] for _ in range(l_y) ] for _ in range(2)])
+  overlap = wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice)
+  assert np.allclose(overlap, 0.05733717065853551)
+
 def test_nn_jastrow_overlap():
   n_sites = 4
   lattice = lattices.one_dimensional_chain(n_sites)
