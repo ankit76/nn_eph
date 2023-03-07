@@ -139,6 +139,15 @@ def test_ssh_2d():
   assert np.allclose(sum(overlap_gradient), 399.1125417937265)
   assert np.allclose(weight, 0.015636617084037848)
 
+def test_ssh_2d_2():
+  ham = hamiltonians_2.ssh_2d(1., 1., 1.)
+  random_number = 0.5
+  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_s_2d_2, gamma_s_2d, reference_s_2d, lattice_2d, random_number)
+  assert np.allclose(energy, -12.836294885966295)
+  assert np.allclose(qp_weight, 0.0)
+  assert np.allclose(sum(overlap_gradient), 44.022228220244706)
+  assert np.allclose(weight, 0.038376743628477976)
+
 def test_long_range_2d():
   ham = hamiltonians.long_range_2d(1., 1., 1.)
   random_number = 0.5
@@ -174,6 +183,7 @@ if __name__ == "__main__":
   test_ssh_1d()
   test_holstein_2d()
   test_ssh_2d()
+  test_ssh_2d_2()
   test_long_range_2d()
   test_long_range_2d_2()
   test_holstein_3d()

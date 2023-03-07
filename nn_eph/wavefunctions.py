@@ -121,10 +121,47 @@ class ssh_merrifield():
 
     return overlap
 
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
+    neighboring_bonds_0 = lattice.get_neighboring_bonds(elec_pos[0])
+    neighboring_bonds_1 = lattice.get_neighboring_bonds(elec_pos[1])
+
+    # carry: [ overlap, bond_position_0, bond_position_1 ]
+    def scanned_fun(carry, x):
+      dist_0 = lattice.get_bond_distance(carry[1], x)
+      dist_1 = lattice.get_bond_distance(carry[2], x)
+      carry[0] *= (parameters[dist_0] + parameters[dist_1])**(phonon_occ[(*x,)])
+      return carry, x
+
+    # carry: [ overlap, bond_position_0 ]
+    def outer_scanned_fun(carry, x):
+      overlap = 1.
+      [ overlap, _, _ ], _ = lax.scan(scanned_fun, [ overlap, carry[1], x ], jnp.array(lattice.bonds))
+      carry[0] += overlap
+      return carry, x
+
+    # carry: [ overlap ]
+    def outer_outer_scanned_fun(carry, x):
+      overlap = 0.
+      [ overlap, _ ], _ = lax.scan(outer_scanned_fun, [ overlap, x ], neighboring_bonds_1)
+      carry += overlap
+      return carry, x
+
+    overlap = 0.
+    overlap, _ = lax.scan(outer_outer_scanned_fun, overlap, neighboring_bonds_0)
+
+    return overlap
 
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
     value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
+    gradient = self.serialize(gradient)
+    gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
+    return gradient / value
+
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+    value, gradient = value_and_grad(self.calc_overlap_map, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
     gradient = self.serialize(gradient)
     gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
     return gradient / value
