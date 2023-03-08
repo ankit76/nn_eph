@@ -14,6 +14,7 @@ lattice_1d = lattices.one_dimensional_chain(n_sites_1d)
 gamma_1d = jnp.array(np.random.rand(n_sites_1d//2 + 1))
 reference_h_1d = wavefunctions.merrifield(gamma_1d.size)
 reference_s_1d = wavefunctions.ssh_merrifield(gamma_1d.size)
+reference_bm_s_1d = wavefunctions.bm_ssh_merrifield(gamma_1d.size)
 model_1d = models.MLP([5, 1])
 model_input_1d = jnp.zeros(2*n_sites_1d)
 nn_parameters_1d = model_1d.init(random.PRNGKey(seed), model_input_1d, mutable=True)
@@ -121,6 +122,17 @@ def test_ssh_1d():
   assert np.allclose(weight, 0.039807592428511035)
   assert sum(walker) == 3
 
+def test_bm_ssh_1d():
+  ham = hamiltonians.bm_ssh_1d(1., 1.)
+  random_number = 0.5
+  walker_1d = jnp.array([ 0 ] + [ 2, 0, 0, 0 ])
+  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_1d, gamma_1d, reference_bm_s_1d, lattice_1d, random_number)
+  assert np.allclose(energy, -27.78881273208553)
+  assert np.allclose(qp_weight, 0.0)
+  assert np.allclose(sum(overlap_gradient), 28.64919274)
+  assert np.allclose(weight, 0.046798616005667495)
+  assert sum(walker) == 4
+
 def test_holstein_2d():
   ham = hamiltonians.holstein_2d(1., 1.)
   random_number = 0.5
@@ -181,6 +193,7 @@ if __name__ == "__main__":
   test_long_range_1d()
   test_long_range_1d_2()
   test_ssh_1d()
+  test_bm_ssh_1d()
   test_holstein_2d()
   test_ssh_2d()
   test_ssh_2d_2()
