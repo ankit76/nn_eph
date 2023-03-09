@@ -20,16 +20,16 @@ class one_dimensional_chain():
     self.bonds = tuple([ (i,) for i in range(self.n_sites) ]) if self.n_sites > 2 else tuple([ (0,) ])
 
   def get_neighboring_bonds(self, pos):
-    return jnp.array([ (pos - 1) % self.n_sites, pos ]) if self.n_sites > 2 else jnp.array([ 0 ])
+    return jnp.array([ ((pos[0] - 1) % self.n_sites,), (pos[0],) ]) if self.n_sites > 2 else jnp.array([ (0,) ])
   
   def get_neighboring_sites(self, bond):
-    return [ (bond % self.n_sites,), ((bond + 1) % self.n_sites,) ]
+    return [ (bond[0] % self.n_sites,), ((bond[0] + 1) % self.n_sites,) ]
 
   def get_distance(self, pos_1, pos_2):
-    return jnp.min(jnp.array([jnp.abs(pos_1 - pos_2), self.n_sites - jnp.abs(pos_1 - pos_2)]))
+    return jnp.min(jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.n_sites - jnp.abs(pos_1[0] - pos_2[0])]))
 
   def get_bond_distance(self, pos_1, pos_2):
-    return jnp.min(jnp.array([jnp.abs(pos_1 - pos_2), self.n_sites - jnp.abs(pos_1 - pos_2)]))
+    return jnp.min(jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.n_sites - jnp.abs(pos_1[0] - pos_2[0])]))
 
   def __hash__(self):
     return hash((self.n_sites, self.shape, self.sites, self.bonds))

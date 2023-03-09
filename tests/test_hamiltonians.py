@@ -22,8 +22,8 @@ n_nn_parameters_1d = sum(x.size for x in tree_util.tree_leaves(nn_parameters_1d)
 parameters_1d = [ gamma_1d, nn_parameters_1d ]
 wave_h_1d = wavefunctions.nn_jastrow(model_1d.apply, reference_h_1d, n_nn_parameters_1d)
 wave_s_1d = wavefunctions.nn_jastrow(model_1d.apply, reference_s_1d, n_nn_parameters_1d)
-walker_1d = jnp.array([ 0 ] + [ 2, 0, 1, 0 ])
-walker_1d_2 = jnp.array([ 0, 1 ] + [ 2, 0, 1, 0 ])
+walker_1d = [ (0,), jnp.array([ 2, 0, 1, 0 ]) ]
+walker_1d_2 = [ [ (0,), (1,) ], jnp.array([2, 0, 1, 0]) ]
 
 np.random.seed(seed)
 l_x, l_y = 4, 4
@@ -80,7 +80,7 @@ def test_holstein_1d():
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 28.137563833940348)
   assert np.allclose(weight, 0.03917701580761051)
-  assert sum(walker) == 2
+  assert walker[0][0] + sum(walker[1]) == 2
 
 def test_holstein_1d_2():
   ham = hamiltonians_2.holstein_1d(1., 1., 1.)
@@ -90,7 +90,7 @@ def test_holstein_1d_2():
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 21.620797603398334)
   assert np.allclose(weight, 0.052438402703666474)
-  assert sum(walker) == 5
+  assert walker[0][0][0] + walker[0][1][0] + sum(walker[1]) == 5
 
 def test_long_range_1d():
   ham = hamiltonians.long_range_1d(1., 1., 1.)
@@ -100,7 +100,7 @@ def test_long_range_1d():
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 28.137563833940348)
   assert np.allclose(weight, 0.0360180205080746)
-  assert sum(walker) == 2
+  assert walker[0][0] + sum(walker[1]) == 2
 
 def test_long_range_1d_2():
   ham = hamiltonians_2.long_range_1d(1., 1., 1., 1.)
@@ -110,7 +110,7 @@ def test_long_range_1d_2():
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 21.620797603398334)
   assert np.allclose(weight, 0.04611878427324339)
-  assert sum(walker) == 5
+  assert walker[0][0][0] + walker[0][1][0] + sum(walker[1]) == 5
 
 def test_ssh_1d():
   ham = hamiltonians.ssh_1d(1., 1.)
@@ -120,18 +120,18 @@ def test_ssh_1d():
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 23.908205908185963)
   assert np.allclose(weight, 0.039807592428511035)
-  assert sum(walker) == 3
+  assert walker[0][0] + sum(walker[1]) == 3
 
 def test_bm_ssh_1d():
   ham = hamiltonians.bm_ssh_1d(1., 1.)
   random_number = 0.5
-  walker_1d = jnp.array([ 0 ] + [ 2, 0, 0, 0 ])
+  walker_1d = [(0,), jnp.array([ 2, 0, 0, 0 ])]
   energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_1d, gamma_1d, reference_bm_s_1d, lattice_1d, random_number)
   assert np.allclose(energy, -27.78881273208553)
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 28.64919274)
   assert np.allclose(weight, 0.046798616005667495)
-  assert sum(walker) == 4
+  assert walker[0][0] + sum(walker[1]) == 4
 
 def test_holstein_2d():
   ham = hamiltonians.holstein_2d(1., 1.)

@@ -271,6 +271,11 @@ class nn_jastrow():
     elec_pos_ar = elec_pos_ar.at[elec_pos].set(1)
     input_ar = jnp.stack([ elec_pos_ar, *phonon_occ.reshape(-1, *lattice_shape) ], axis=-1)
     return input_ar
+    #input_ar = phonon_occ.reshape(-1, *lattice_shape)
+    #for ax, coord in enumerate(elec_pos):
+    #  for phonon_type in range(phonon_occ.shape[0]):
+    #    input_ar = input_ar.at[phonon_type].set(input_ar[phonon_type].take(jnp.arange(coord, coord + #lattice_shape[ax]), axis=ax, mode='wrap'))
+    #return jnp.stack([*input_ar], axis=-1)
 
   def serialize(self, parameters):
     flat_tree = tree_util.tree_flatten(parameters[1])[0]
