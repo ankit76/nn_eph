@@ -30,7 +30,7 @@ ham = hamiltonians.holstein_1d(omega, g)
 
 gamma = jnp.array([ g / omega / n_sites for _ in range(n_sites // 2 + 1) ])
 model = models.MLP([20, 1])
-model_input = jnp.zeros(2*n_sites)
+model_input = jnp.zeros(n_sites)
 nn_parameters = model.init(random.PRNGKey(0), model_input, mutable=True)
 n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters))
 parameters = [ gamma, nn_parameters ]
@@ -42,7 +42,7 @@ n_eql = 100
 n_samples = 10000
 sampler = samplers.continuous_time(n_eql, n_samples)
 
-walker = jnp.array([ 0 ] + [ int((g//(omega * n_sites))**2) ] * n_sites)
+walker = [ (0,), jnp.array([ int((g//(omega * n_sites))**2) ] * n_sites) ]
 n_steps = 1000
 step_size = 0.02
 

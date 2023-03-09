@@ -267,15 +267,17 @@ class nn_jastrow():
   # TODO: needs to be changed for 2 sites
   @partial(jit, static_argnums=(0, 3))
   def get_input(self, elec_pos, phonon_occ, lattice_shape):
-    elec_pos_ar = jnp.zeros(lattice_shape)
-    elec_pos_ar = elec_pos_ar.at[elec_pos].set(1)
-    input_ar = jnp.stack([ elec_pos_ar, *phonon_occ.reshape(-1, *lattice_shape) ], axis=-1)
-    return input_ar
-    #input_ar = phonon_occ.reshape(-1, *lattice_shape)
-    #for ax, coord in enumerate(elec_pos):
-    #  for phonon_type in range(phonon_occ.shape[0]):
-    #    input_ar = input_ar.at[phonon_type].set(input_ar[phonon_type].take(jnp.arange(coord, coord + #lattice_shape[ax]), axis=ax, mode='wrap'))
-    #return jnp.stack([*input_ar], axis=-1)
+    #elec_pos_ar = jnp.zeros(lattice_shape)
+    #elec_pos_ar = elec_pos_ar.at[elec_pos].set(1)
+    #input_ar = jnp.stack([ elec_pos_ar, *phonon_occ.reshape(-1, *lattice_shape) ], axis=-1)
+    #return input_ar
+    #import jax
+    #jax.debug.print('elec_pos: {}', elec_pos) 
+    input_ar = phonon_occ.reshape(-1, *lattice_shape)
+    for ax in range(len(lattice_shape)):
+      for phonon_type in range(phonon_occ.shape[0]):
+        input_ar = input_ar.at[phonon_type].set(input_ar[phonon_type].take(elec_pos[ax] + jnp.arange(lattice_shape[ax]), axis=ax, mode='wrap'))
+    return jnp.stack([*input_ar], axis=-1)
 
   def serialize(self, parameters):
     flat_tree = tree_util.tree_flatten(parameters[1])[0]
