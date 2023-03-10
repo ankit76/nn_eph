@@ -39,16 +39,18 @@ def driver(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, step
     #else:
     #  g_scan = g * (1. - jnp.exp(-(iteration - starter_iters) / 500))
       #g_scan = 6. - (6. - g) * (1. - jnp.exp(-(iteration - starter_iters) / 500))
-    weight, energy, gradient, lene_gradient, qp_weight, energies, qp_weights, weights = sampler.sampling(walker, ham, parameters, wave, lattice, random_numbers)
+    weight, energy, gradient, lene_gradient, qp_weight, metric, energies, qp_weights, weights = sampler.sampling(walker, ham, parameters, wave, lattice, random_numbers)
 
     # average and print energies for the current step
     weight = np.array([ weight ])
     energy = np.array([ weight * energy ])
     qp_weight = np.array([ weight * qp_weight ])
+    metric = np.array(weight * metric)
     #energy = np.array([ energy ])
     total_weight = 0. * weight
     total_energy = 0. * weight
     total_qp_weight = 0. * weight
+    total_metric = 0. * metric
     gradient = np.array(weight * gradient)
     lene_gradient = np.array(weight * lene_gradient)
     #gradient = np.array(gradient)
@@ -60,6 +62,7 @@ def driver(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, step
     comm.Reduce([weight, MPI.DOUBLE], [total_weight, MPI.DOUBLE], op=MPI.SUM, root=0)
     comm.Reduce([energy, MPI.DOUBLE], [total_energy, MPI.DOUBLE], op=MPI.SUM, root=0)
     comm.Reduce([qp_weight, MPI.DOUBLE], [total_qp_weight, MPI.DOUBLE], op=MPI.SUM, root=0)
+    comm.Reduce([metric, MPI.DOUBLE], [total_metric, MPI.DOUBLE], op=MPI.SUM, root=0)
     comm.Reduce([gradient, MPI.DOUBLE], [total_gradient, MPI.DOUBLE], op=MPI.SUM, root=0)
     comm.Reduce([lene_gradient, MPI.DOUBLE], [total_lene_gradient, MPI.DOUBLE], op=MPI.SUM, root=0)
     comm.barrier()
@@ -68,8 +71,22 @@ def driver(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, step
     if rank == 0:
       total_energy /= total_weight
       total_qp_weight /= total_weight
+      total_metric /= total_weight
       total_gradient /= total_weight
       total_lene_gradient /= total_weight
+      
+      metric = np.zeros((wave.n_parameters + 1, wave.n_parameters + 1))
+      metric[0,0] = 1.
+      metric[1:,1:] = total_metric + np.diag(np.ones(wave.n_parameters) * 1.e-3)
+      metric[0, 1:] = total_gradient
+      metric[1:, 0] = total_gradient
+      y_vec = np.zeros(wave.n_parameters + 1)
+      y_vec[0] = 1 - step_size * total_energy
+      y_vec[1:] = total_gradient - total_lene_gradient * step_size
+      update = np.linalg.solve(metric, y_vec)
+      update = update[1:] / update[0]
+      new_parameters = wave.update_parameters(parameters, update)
+
       ene_gradient = 2 * total_lene_gradient - 2 * total_gradient * total_energy
       print(f'{iteration: 5d}   {total_energy[0]: .6e}    {total_qp_weight[0]: .6e}   {jnp.linalg.norm(ene_gradient): .6e}')
       #print(f'iter: {iteration: 5d}, ene: {total_energy[0]: .6e}, qp_weight: {total_qp_weight[0]: .6e}, grad: {jnp.linalg.norm(ene_gradient): .6e}')
@@ -77,17 +94,18 @@ def driver(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, step
       #print(f'total_weight: {total_weight}')
       #print(f'total_energy: {total_energy}')
       #print(f'total_gradient: {total_gradient}')
-      if iteration == 0:
-        update = step_size * ene_gradient
-        moment_1 = decay_1 * ene_gradient + (1 - decay_1) * moment_1
-        moment_2 = jnp.maximum(moment_2, decay_2 * ene_gradient * ene_gradient + (1 - decay_2) * moment_2)
-      else:
-        moment_1 = decay_1 * ene_gradient + (1 - decay_1) * moment_1
-        moment_2 = jnp.maximum(moment_2, decay_2 * ene_gradient * ene_gradient + (1 - decay_2) * moment_2)
-        update = step_size * moment_1 / (moment_2**0.5 + 1.e-8)
-        #update = momentum * update + step_size * ene_gradient
-
-      new_parameters = wave.update_parameters(parameters, -update)
+      
+      #if iteration == 0:
+      #  update = step_size * ene_gradient
+      #  moment_1 = decay_1 * ene_gradient + (1 - decay_1) * moment_1
+      #  moment_2 = jnp.maximum(moment_2, decay_2 * ene_gradient * ene_gradient + (1 - decay_2) * moment_2)
+      #else:
+      #  moment_1 = decay_1 * ene_gradient + (1 - decay_1) * moment_1
+      #  moment_2 = jnp.maximum(moment_2, decay_2 * ene_gradient * ene_gradient + (1 - decay_2) * moment_2)
+      #  update = step_size * moment_1 / (moment_2**0.5 + 1.e-8)
+      #  #update = momentum * update + step_size * ene_gradient
+      #new_parameters = wave.update_parameters(parameters, -update)
+      
       #new_parameters = [ update_parameters(parameters[0], -update), parameters[1] ]
       #new_parameters = parameters - update
       #new_parameters = new_parameters.at[0].set(0.)

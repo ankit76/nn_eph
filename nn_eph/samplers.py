@@ -15,7 +15,7 @@ class continuous_time():
 
   @partial(jit, static_argnums=(0, 2, 4, 5))
   def sampling(self, walker, ham, parameters, wave, lattice, random_numbers):
-    # carry : [ walker, weight, energy, grad, lene_grad, qp_weight ]
+    # carry : [ walker, weight, energy, grad, lene_grad, qp_weight, metric ]
     def scanned_fun(carry, x):
       energy, qp_weight, gradient, weight, carry[0] = ham.local_energy_and_update(carry[0], parameters, wave, lattice, random_numbers[x])
       carry[1] += weight
@@ -23,6 +23,7 @@ class continuous_time():
       carry[3] = carry[3] + weight * (gradient - carry[3]) / carry[1]
       carry[4] = carry[4] + weight * (energy * gradient - carry[4]) / carry[1]
       carry[5] += weight * (qp_weight - carry[5]) / carry[1]
+      carry[6] += weight * (jnp.einsum('i,j->ij', gradient, gradient) - carry[6]) / carry[1]
       return carry, (energy, qp_weight, weight)
 
     weight = 0.
@@ -30,17 +31,19 @@ class continuous_time():
     gradient = jnp.zeros(wave.n_parameters)
     lene_gradient = jnp.zeros(wave.n_parameters)
     qp_weight = 0.
-    [walker, _, _, _, _, _] , (_, _, _) = lax.scan(scanned_fun, [ walker, weight, energy, gradient, lene_gradient, qp_weight ], jnp.arange(self.n_eql))
+    metric = jnp.zeros((wave.n_parameters, wave.n_parameters))
+    [walker, _, _, _, _, _, _] , (_, _, _) = lax.scan(scanned_fun, [ walker, weight, energy, gradient, lene_gradient, qp_weight, metric ], jnp.arange(self.n_eql))
 
     weight = 0.
     energy = 0.
     gradient = jnp.zeros(wave.n_parameters)
     lene_gradient = jnp.zeros(wave.n_parameters)
     qp_weight = 0.
-    [_, weight, energy, gradient, lene_gradient, qp_weight] , (energies, qp_weights,  weights) = lax.scan(scanned_fun, [ walker, weight, energy, gradient, lene_gradient, qp_weight ], jnp.arange(self.n_samples))
+    metric = jnp.zeros((wave.n_parameters, wave.n_parameters))
+    [_, weight, energy, gradient, lene_gradient, qp_weight, metric] , (energies, qp_weights,  weights) = lax.scan(scanned_fun, [ walker, weight, energy, gradient, lene_gradient, qp_weight, metric ], jnp.arange(self.n_samples))
 
     # energy, gradient, lene_gradient are weighted
-    return weight, energy, gradient, lene_gradient, qp_weight, energies, qp_weights, weights
+    return weight, energy, gradient, lene_gradient, qp_weight, metric, energies, qp_weights, weights
 
   def __hash__(self):
     return hash((self.n_eql, self.n_samples))
