@@ -48,7 +48,8 @@ class merrifield():
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
     #value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
-    value, grad_fun = vjp(self.calc_overlap, elec_pos, phonon_occ, parameters, lattice)
+    parameters_c = parameters + 0.j
+    value, grad_fun = vjp(self.calc_overlap, elec_pos, phonon_occ, parameters_c, lattice)
     gradient = grad_fun(1. + 0.j)[2]
     gradient = self.serialize(gradient) / value
     gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
@@ -203,7 +204,7 @@ class bm_ssh_merrifield():
     for bond in neighboring_bonds:
       phonon_sites = lattice.get_neighboring_sites(bond)
       overlap += ((parameters[0])**(phonon_occ[(*phonon_sites[0],)])) * ((-parameters[0])**(phonon_occ[(*phonon_sites[1],)])) * (jnp.sum(phonon_occ) == (phonon_occ[(*phonon_sites[0],)] + phonon_occ[(*phonon_sites[1],)]))
-      
+
     #overlap, _ = lax.scan(outer_scanned_fun, overlap, neighboring_bonds)
 
     return overlap
@@ -275,7 +276,7 @@ class nn_jastrow():
     #input_ar = jnp.stack([ elec_pos_ar, *phonon_occ.reshape(-1, *lattice_shape) ], axis=-1)
     #return input_ar
     #import jax
-    #jax.debug.print('elec_pos: {}', elec_pos) 
+    #jax.debug.print('elec_pos: {}', elec_pos)
     input_ar = phonon_occ.reshape(-1, *lattice_shape)
     for ax in range(len(lattice_shape)):
       for phonon_type in range(phonon_occ.shape[0]):
