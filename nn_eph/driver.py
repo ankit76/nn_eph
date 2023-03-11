@@ -73,8 +73,8 @@ def driver(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, step
       ene_gradient = 2 * total_lene_gradient - 2 * total_gradient * total_energy
       print(f'{iteration: 5d}   {total_energy[0]: .6e}    {total_qp_weight[0]: .6e}   {jnp.linalg.norm(ene_gradient): .6e}')
       #print(f'iter: {iteration: 5d}, ene: {total_energy[0]: .6e}, qp_weight: {total_qp_weight[0]: .6e}, grad: {jnp.linalg.norm(ene_gradient): .6e}')
-      print(f'parameters: {parameters}')
-      print(f'total_gradient: {ene_gradient}')
+      #print(f'parameters: {parameters}')
+      #print(f'total_gradient: {ene_gradient}')
       #print(f'total_weight: {total_weight}')
       #print(f'total_energy: {total_energy}')
       #print(f'total_gradient: {total_gradient}')
