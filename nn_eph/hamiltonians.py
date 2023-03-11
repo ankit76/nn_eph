@@ -32,12 +32,12 @@ class holstein_1d():
     # electron hops
     new_elec_pos = ((elec_pos[0] + 1) % n_sites,)
     new_overlap = wave.calc_overlap(new_elec_pos, phonon_occ, parameters, lattice)
-    ratio_0 = lax.cond(n_sites > 1, lambda x: x / overlap, lambda x: 0., new_overlap)
+    ratio_0 = lax.cond(n_sites > 1, lambda x: x / overlap, lambda x: 0.j, new_overlap)
     energy -= ratio_0
 
     new_elec_pos = ((elec_pos[0] - 1) % n_sites,)
     new_overlap = wave.calc_overlap(new_elec_pos, phonon_occ, parameters, lattice)
-    ratio_1 = lax.cond(n_sites > 2, lambda x: x / overlap, lambda x: 0., new_overlap)
+    ratio_1 = lax.cond(n_sites > 2, lambda x: x / overlap, lambda x: 0.j, new_overlap)
     energy -= ratio_1
 
     # e_ph coupling
@@ -46,7 +46,7 @@ class holstein_1d():
     energy -= self.g * (phonon_occ[elec_pos] + 1)**0.5 * ratio_2
 
     new_phonon_occ = phonon_occ.at[elec_pos].add(-1)
-    ratio_3 = (phonon_occ[elec_pos])**0.5 * wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice) / overlap
+    ratio_3 = lax.cond(phonon_occ[elec_pos] > 0, lambda x: (phonon_occ[elec_pos])**0.5 * wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice) / overlap, lambda x: 0.j, 0.)
     energy -= self.g * (phonon_occ[elec_pos])**0.5 * ratio_3
 
     cumulative_ratios = jnp.cumsum(jnp.abs(jnp.array([ ratio_0, ratio_1, ratio_2, ratio_3 ])))

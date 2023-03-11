@@ -2,7 +2,7 @@ import os
 import numpy as np
 os.environ['JAX_PLATFORM_NAME'] = 'cpu'
 os.environ['JAX_ENABLE_X64'] = 'True'
-from jax import random, lax, tree_util, grad, value_and_grad, jit, numpy as jnp
+from jax import random, lax, tree_util, grad, value_and_grad, vjp, jit, numpy as jnp
 from flax import linen as nn
 from typing import Sequence, Tuple, Callable, Any
 from dataclasses import dataclass
@@ -21,12 +21,13 @@ class merrifield():
 
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap(self, elec_pos, phonon_occ, parameters, lattice):
+    gamma = parameters[:self.n_parameters//2] + 1.j * parameters[self.n_parameters//2:]
     def scanned_fun(carry, x):
       dist = lattice.get_distance(elec_pos, x)
-      carry *= (parameters[dist])**(phonon_occ[(*x,)])
+      carry *= (gamma[dist])**(phonon_occ[(*x,)])
       return carry, x
 
-    overlap = 1.
+    overlap = 1. + 0.j
     overlap, _ = lax.scan(scanned_fun, overlap, jnp.array(lattice.sites))
 
     return overlap
@@ -46,10 +47,12 @@ class merrifield():
 
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
-    value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
-    gradient = self.serialize(gradient)
+    #value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
+    value, grad_fun = vjp(self.calc_overlap, elec_pos, phonon_occ, parameters, lattice)
+    gradient = grad_fun(1. + 0.j)[2]
+    gradient = self.serialize(gradient) / value
     gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
-    return gradient / value
+    return gradient
 
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):

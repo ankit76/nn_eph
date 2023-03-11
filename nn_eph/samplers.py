@@ -19,16 +19,16 @@ class continuous_time():
     def scanned_fun(carry, x):
       energy, qp_weight, gradient, weight, carry[0] = ham.local_energy_and_update(carry[0], parameters, wave, lattice, random_numbers[x])
       carry[1] += weight
-      carry[2] += weight * (energy - carry[2]) / carry[1]
-      carry[3] = carry[3] + weight * (gradient - carry[3]) / carry[1]
-      carry[4] = carry[4] + weight * (energy * gradient - carry[4]) / carry[1]
+      carry[2] += weight * (jnp.real(energy) - carry[2]) / carry[1]
+      carry[3] = carry[3] + weight * (jnp.real(gradient) - carry[3]) / carry[1]
+      carry[4] = carry[4] + weight * (jnp.real(energy * gradient) - carry[4]) / carry[1]
       carry[5] += weight * (qp_weight - carry[5]) / carry[1]
-      return carry, (energy, qp_weight, weight)
+      return carry, (jnp.real(energy), qp_weight, weight)
 
     weight = 0.
     energy = 0.
-    gradient = jnp.zeros(wave.n_parameters)
-    lene_gradient = jnp.zeros(wave.n_parameters)
+    gradient = jnp.zeros(wave.n_parameters) 
+    lene_gradient = jnp.zeros(wave.n_parameters) 
     qp_weight = 0.
     [walker, _, _, _, _, _] , (_, _, _) = lax.scan(scanned_fun, [ walker, weight, energy, gradient, lene_gradient, qp_weight ], jnp.arange(self.n_eql))
 

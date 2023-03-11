@@ -6,8 +6,10 @@ from flax import linen as nn
 from typing import Sequence, Tuple, Any
 from dataclasses import dataclass
 from functools import partial
+from jax.tree_util import register_pytree_node_class
 
 @dataclass
+@register_pytree_node_class
 class one_dimensional_chain():
   n_sites: int
   shape: tuple = None
@@ -18,22 +20,28 @@ class one_dimensional_chain():
     self.shape = (self.n_sites,)
     self.sites = tuple([ (i,) for i in range(self.n_sites) ])
     self.bonds = tuple([ (i,) for i in range(self.n_sites) ]) if self.n_sites > 2 else tuple([ (0,) ])
-
+  
   def get_neighboring_bonds(self, pos):
     return jnp.array([ ((pos[0] - 1) % self.n_sites,), (pos[0],) ]) if self.n_sites > 2 else jnp.array([ (0,) ])
   
   def get_neighboring_sites(self, bond):
     return [ (bond[0] % self.n_sites,), ((bond[0] + 1) % self.n_sites,) ]
-
+  
   def get_distance(self, pos_1, pos_2):
     return jnp.min(jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.n_sites - jnp.abs(pos_1[0] - pos_2[0])]))
-
+  
   def get_bond_distance(self, pos_1, pos_2):
     return jnp.min(jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.n_sites - jnp.abs(pos_1[0] - pos_2[0])]))
-
+  
   def __hash__(self):
     return hash((self.n_sites, self.shape, self.sites, self.bonds))
-
+  
+  def tree_flatten(self):
+    return (), (self.n_sites,)
+  
+  @classmethod
+  def tree_unflatten(cls, aux_data, children):
+    return cls(*aux_data)
 
 @dataclass
 class two_dimensional_grid():

@@ -28,7 +28,8 @@ omega = 1.
 g = 1.
 ham = hamiltonians.holstein_1d(omega, g)
 
-gamma = jnp.array([ g / omega / n_sites for _ in range(n_sites // 2 + 1) ])
+gamma = jnp.array([ g / omega / n_sites for _ in range(n_sites // 2 + 1) ] + [ 0. for _ in range(n_sites // 2 + 1) ])
+
 model = models.MLP([20, 1])
 model_input = jnp.zeros(n_sites)
 nn_parameters = model.init(random.PRNGKey(0), model_input, mutable=True)
@@ -37,13 +38,16 @@ parameters = [ gamma, nn_parameters ]
 reference = wavefunctions.merrifield(gamma.size)
 wave = wavefunctions.nn_jastrow(model.apply, reference, n_nn_parameters)
 
+wave = reference
+parameters = gamma
+
 seed = 789941
 n_eql = 100
-n_samples = 10000
+n_samples = 100000
 sampler = samplers.continuous_time(n_eql, n_samples)
 
 walker = [ (0,), jnp.array([ int((g//(omega * n_sites))**2) ] * n_sites) ]
-n_steps = 1000
+n_steps = 500
 step_size = 0.02
 
 if rank == 0:
