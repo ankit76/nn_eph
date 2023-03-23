@@ -131,7 +131,7 @@ def test_nn_jastrow_overlap():
   gamma = jnp.array(np.random.rand(n_sites//2 + 1))
   reference = wavefunctions.ssh_merrifield(gamma.size)
   model = models.MLP([5, 1])
-  model_input = jnp.zeros(n_sites)
+  model_input = jnp.zeros(2*n_sites)
   nn_parameters = model.init(random.PRNGKey(seed), model_input, mutable=True)
   n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters))
   parameters = [ gamma, nn_parameters ]
@@ -140,10 +140,10 @@ def test_nn_jastrow_overlap():
   elec_pos = (0,)
   phonon_occ = jnp.array([ 2, 0, 1, 0 ])
   overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
-  #assert np.allclose(overlap, 0.004827891090786609)
+  assert np.allclose(overlap, 0.004827891090786609)
 
   model = models.CNN([ 4, 1 ], [ (2,), (2,) ])
-  model_input = jnp.zeros((1, n_sites, 1))
+  model_input = jnp.zeros((1, n_sites, 2))
   nn_parameters = model.init(random.PRNGKey(seed), model_input, mutable=True)
   n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters))
   parameters = [ gamma, nn_parameters ]
@@ -159,7 +159,7 @@ def test_nn_jastrow_overlap():
   gamma = jnp.array(np.random.rand(len(lattice.shell_distances)))
   reference = wavefunctions.merrifield(gamma.size)
   model = models.MLP([4, 1])
-  model_input = jnp.zeros(n_sites)
+  model_input = jnp.zeros(2*n_sites)
   nn_parameters = model.init(random.PRNGKey(seed), model_input, mutable=True)
   n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters))
   parameters = [ gamma, nn_parameters ]
@@ -168,10 +168,10 @@ def test_nn_jastrow_overlap():
   elec_pos = (0, 0)
   phonon_occ = jnp.array([[ np.random.randint(2) for _ in range(l_x) ] for _ in range(l_y) ])
   overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
-  #assert np.allclose(overlap, 0.0007504690111926278)
+  assert np.allclose(overlap, 0.0007504690111926278)
 
   model = models.CNN([ 4, 1 ], [ (2,2), (2,2) ])
-  model_input = jnp.zeros((1, l_y, l_x, 1))
+  model_input = jnp.zeros((1, l_y, l_x, 2))
   nn_parameters = model.init(random.PRNGKey(seed), model_input, mutable=True)
   n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters))
   parameters = [ gamma, nn_parameters ]
@@ -202,11 +202,11 @@ def test_nn_jastrow_2_overlap():
   assert np.allclose(overlap, 0.471666215558904261)
 
 if __name__ == "__main__":
-  #test_merrifield_overlap()
-  #test_merrifield_overlap_map()
-  #test_ssh_merrifield_overlap()
-  #test_ssh_merrifield_overlap_map()
-  #test_bm_ssh_merrifield_overlap()
+  test_merrifield_overlap()
+  test_merrifield_overlap_map()
+  test_ssh_merrifield_overlap()
+  test_ssh_merrifield_overlap_map()
+  test_bm_ssh_merrifield_overlap()
   test_nn_jastrow_overlap()
-  #test_nn_jastrow_2_overlap()
+  test_nn_jastrow_2_overlap()
 
