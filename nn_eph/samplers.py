@@ -15,6 +15,43 @@ class continuous_time():
 
   @partial(jit, static_argnums=(0, 2, 4, 5))
   def sampling(self, walker, ham, parameters, wave, lattice, random_numbers):
+    # carry : [ walker, weight, energy, grad, lene_grad, qp_weight ]
+    def scanned_fun(carry, x):
+      energy, qp_weight, gradient, weight, carry[0] = ham.local_energy_and_update(carry[0], parameters, wave, lattice, random_numbers[x])
+      carry[1] += weight
+      carry[2] += weight * (energy - carry[2]) / carry[1]
+      carry[3] = carry[3] + weight * (gradient - carry[3]) / carry[1]
+      carry[4] = carry[4] + weight * (energy * gradient - carry[4]) / carry[1]
+      carry[5] += weight * (qp_weight - carry[5]) / carry[1]
+      return carry, (energy, qp_weight, weight)
+
+    weight = 0.
+    energy = 0.
+    gradient = jnp.zeros(wave.n_parameters)
+    lene_gradient = jnp.zeros(wave.n_parameters)
+    qp_weight = 0.
+    [walker, _, _, _, _, _] , (_, _, _) = lax.scan(scanned_fun, [ walker, weight, energy, gradient, lene_gradient, qp_weight ], jnp.arange(self.n_eql))
+
+    weight = 0.
+    energy = 0.
+    gradient = jnp.zeros(wave.n_parameters)
+    lene_gradient = jnp.zeros(wave.n_parameters)
+    qp_weight = 0.
+    [_, weight, energy, gradient, lene_gradient, qp_weight] , (energies, qp_weights,  weights) = lax.scan(scanned_fun, [ walker, weight, energy, gradient, lene_gradient, qp_weight ], jnp.arange(self.n_samples))
+
+    # energy, gradient, lene_gradient are weighted
+    return weight, energy, gradient, lene_gradient, qp_weight, energies, qp_weights, weights
+
+  def __hash__(self):
+    return hash((self.n_eql, self.n_samples))
+
+@dataclass
+class continuous_time_sr():
+  n_eql: int
+  n_samples: int
+
+  @partial(jit, static_argnums=(0, 2, 4, 5))
+  def sampling(self, walker, ham, parameters, wave, lattice, random_numbers):
     # carry : [ walker, weight, energy, grad, lene_grad, qp_weight, metric ]
     def scanned_fun(carry, x):
       energy, qp_weight, gradient, weight, carry[0] = ham.local_energy_and_update(carry[0], parameters, wave, lattice, random_numbers[x])
