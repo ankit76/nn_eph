@@ -13,6 +13,11 @@ from functools import partial
 class holstein_1d():
   omega: float
   g: float
+  dtype: Any = jnp.float64   # this should be handled in the wave function
+  zero_dtype: Any = jnp.array([0.], dtype=jnp.float64)[0]
+
+  def __post_init__(self):
+    self.zero_dtype = jnp.array([0.], self.dtype)[0]
 
   @partial(jit, static_argnums = (0, 3, 4))
   def local_energy_and_update(self, walker, parameters, wave, lattice, random_number):
@@ -23,9 +28,6 @@ class holstein_1d():
     overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
     overlap_gradient = wave.calc_overlap_gradient(elec_pos, phonon_occ, parameters, lattice)
     qp_weight = lax.cond(jnp.sum(phonon_occ) == 0, lambda x: 1., lambda x: 0., 0.)
-    #jax.debug.print('\nwalker: {}', walker)
-    #jax.debug.print('overlap: {}', overlap)
-    #jax.debug.print('overlap_gradient: {}', overlap_gradient)
 
     # diagonal
     energy = self.omega * jnp.sum(phonon_occ)
@@ -33,12 +35,12 @@ class holstein_1d():
     # electron hops
     new_elec_pos = ((elec_pos[0] + 1) % n_sites,)
     new_overlap = wave.calc_overlap(new_elec_pos, phonon_occ, parameters, lattice)
-    ratio_0 = lax.cond(n_sites > 1, lambda x: x / overlap, lambda x: 0.j, new_overlap)
+    ratio_0 = lax.cond(n_sites > 1, lambda x: x / overlap, lambda x: self.zero_dtype, new_overlap)
     energy -= ratio_0
 
     new_elec_pos = ((elec_pos[0] - 1) % n_sites,)
     new_overlap = wave.calc_overlap(new_elec_pos, phonon_occ, parameters, lattice)
-    ratio_1 = lax.cond(n_sites > 2, lambda x: x / overlap, lambda x: 0.j, new_overlap)
+    ratio_1 = lax.cond(n_sites > 2, lambda x: x / overlap, lambda x: self.zero_dtype, new_overlap)
     energy -= ratio_1
 
     # e_ph coupling
@@ -47,15 +49,19 @@ class holstein_1d():
     energy -= self.g * (phonon_occ[elec_pos] + 1)**0.5 * ratio_2
 
     new_phonon_occ = phonon_occ.at[elec_pos].add(-1)
-    ratio_3 = lax.cond(phonon_occ[elec_pos] > 0, lambda x: (phonon_occ[elec_pos])**0.5 * wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice) / overlap, lambda x: 0.j, 0.)
+    ratio_3 = lax.cond(phonon_occ[elec_pos] > 0, lambda x: (phonon_occ[elec_pos])**0.5 * wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice) / overlap, lambda x: self.zero_dtype, 0.)
     energy -= self.g * (phonon_occ[elec_pos])**0.5 * ratio_3
 
     cumulative_ratios = jnp.cumsum(jnp.abs(jnp.array([ ratio_0, ratio_1, ratio_2, ratio_3 ])))
+    weight = 1 / cumulative_ratios[-1]
+    new_ind = jnp.searchsorted(cumulative_ratios, random_number * cumulative_ratios[-1])
+
+    #jax.debug.print('\nwalker: {}', walker)
+    #jax.debug.print('overlap: {}', overlap)
+    ##jax.debug.print('overlap_gradient: {}', overlap_gradient)
+    #jax.debug.print('weight: {}', weight)
     #jax.debug.print('ratios: {}', jnp.array([ ratio_0, ratio_1, ratio_2, ratio_3 ]))
     #jax.debug.print('energy: {}', energy)
-    weight = 1 / cumulative_ratios[-1]
-    #jax.debug.print('weight: {}', weight)
-    new_ind = jnp.searchsorted(cumulative_ratios, random_number * cumulative_ratios[-1])
     #jax.debug.print('random_number: {}', random_number)
     #jax.debug.print('new_ind: {}', new_ind)
 

@@ -20,25 +20,28 @@ class one_dimensional_chain():
     self.shape = (self.n_sites,)
     self.sites = tuple([ (i,) for i in range(self.n_sites) ])
     self.bonds = tuple([ (i,) for i in range(self.n_sites) ]) if self.n_sites > 2 else tuple([ (0,) ])
-  
+
+  def get_symm_fac(self, pos, k):
+    return jnp.exp(2 * jnp.pi * 1.j * k[0] * pos[0] / self.n_sites) if k is not None else 1.
+
   def get_neighboring_bonds(self, pos):
     return jnp.array([ ((pos[0] - 1) % self.n_sites,), (pos[0],) ]) if self.n_sites > 2 else jnp.array([ (0,) ])
-  
+
   def get_neighboring_sites(self, bond):
     return [ (bond[0] % self.n_sites,), ((bond[0] + 1) % self.n_sites,) ]
-  
+
   def get_distance(self, pos_1, pos_2):
     return jnp.min(jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.n_sites - jnp.abs(pos_1[0] - pos_2[0])]))
-  
+
   def get_bond_distance(self, pos_1, pos_2):
     return jnp.min(jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.n_sites - jnp.abs(pos_1[0] - pos_2[0])]))
-  
+
   def __hash__(self):
     return hash((self.n_sites, self.shape, self.sites, self.bonds))
-  
+
   def tree_flatten(self):
-    return (), (self.n_sites,)
-  
+    return (), (self.n_sites, self.shape, self.sites, self.bonds)
+
   @classmethod
   def tree_unflatten(cls, aux_data, children):
     return cls(*aux_data)
@@ -82,6 +85,9 @@ class two_dimensional_grid():
       self.bonds = tuple([ (0, 0, i) for i in self.l_x ] + [ (1, i // self.l_x, i % self.l_x) for i in range(self.l_x * self.l_y) ])
     else:
       self.bonds = tuple([ (0, i // self.l_x, i % self.l_x) for i in range(self.l_x * self.l_y) ] + [ (1, i // self.l_x, i % self.l_x) for i in range(self.l_x * self.l_y) ])
+
+  def get_symm_fac(self, pos, k):
+    return jnp.exp(2 * jnp.pi * 1.j * k[0] * pos[0] / self.n_sites) * jnp.exp(2 * jnp.pi * 1.j * k[1] * pos[1] / self.n_sites) if k is not None else 1.
 
   def get_distance(self, pos_1, pos_2):
     dist_y = jnp.min(jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.l_y - jnp.abs(pos_1[0] - pos_2[0])]))
