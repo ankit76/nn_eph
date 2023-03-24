@@ -56,12 +56,12 @@ class continuous_time_sr():
     def scanned_fun(carry, x):
       energy, qp_weight, gradient, weight, carry[0] = ham.local_energy_and_update(carry[0], parameters, wave, lattice, random_numbers[x])
       carry[1] += weight
-      carry[2] += weight * (energy - carry[2]) / carry[1]
-      carry[3] = carry[3] + weight * (gradient - carry[3]) / carry[1]
-      carry[4] = carry[4] + weight * (energy * gradient - carry[4]) / carry[1]
+      carry[2] += weight * (jnp.real(energy) - carry[2]) / carry[1]
+      carry[3] = carry[3] + weight * (jnp.real(gradient) - carry[3]) / carry[1]
+      carry[4] = carry[4] + weight * (jnp.real(jnp.conjugate(energy) * gradient) - carry[4]) / carry[1]
       carry[5] += weight * (qp_weight - carry[5]) / carry[1]
-      carry[6] += weight * (jnp.einsum('i,j->ij', gradient, gradient) - carry[6]) / carry[1]
-      return carry, (energy, qp_weight, weight)
+      carry[6] += weight * (jnp.real(jnp.einsum('i,j->ij', jnp.conj(gradient), gradient)) - carry[6]) / carry[1]
+      return carry, (jnp.real(energy), qp_weight, weight)
 
     weight = 0.
     energy = 0.

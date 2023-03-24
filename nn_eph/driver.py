@@ -126,8 +126,9 @@ def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, s
   key = random.PRNGKey(seed + rank)
 
   if rank == 0:
-    print(f'  iter       ene           qp_weight        grad_norm')
+    print(f'# iter       ene           qp_weight        grad_norm           time')
 
+  calc_time = 0.
   for iteration in range(n_steps):
     key, subkey = random.split(key)
     random_numbers = random.uniform(subkey, shape=(sampler.n_samples,))
@@ -138,6 +139,7 @@ def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, s
     #else:
     #  g_scan = g * (1. - jnp.exp(-(iteration - starter_iters) / 500))
       #g_scan = 6. - (6. - g) * (1. - jnp.exp(-(iteration - starter_iters) / 500))
+    init = time.time()
     weight, energy, gradient, lene_gradient, qp_weight, metric, energies, qp_weights, weights = sampler.sampling(walker, ham, parameters, wave, lattice, random_numbers)
 
     # average and print energies for the current step
@@ -187,7 +189,8 @@ def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, s
       new_parameters = wave.update_parameters(parameters, update)
 
       ene_gradient = 2 * total_lene_gradient - 2 * total_gradient * total_energy
-      print(f'{iteration: 5d}   {total_energy[0]: .6e}    {total_qp_weight[0]: .6e}   {jnp.linalg.norm(ene_gradient): .6e}')
+      calc_time += time.time() - init
+      print(f'{iteration: 5d}   {total_energy[0]: .6e}    {total_qp_weight[0]: .6e}   {jnp.linalg.norm(ene_gradient): .6e}     {calc_time: .6e}')
       #print(f'iter: {iteration: 5d}, ene: {total_energy[0]: .6e}, qp_weight: {total_qp_weight[0]: .6e}, grad: {jnp.linalg.norm(ene_gradient): .6e}')
       #print(f'parameters: {parameters}')
       #print(f'total_weight: {total_weight}')
