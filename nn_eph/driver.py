@@ -186,6 +186,7 @@ def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, s
       y_vec[1:] = total_gradient - total_lene_gradient * step_size
       update = np.linalg.solve(metric, y_vec)
       update = update[1:] / update[0]
+      update[np.abs(update) > 1.e+3 * 0.99**iteration] = 0.
       new_parameters = wave.update_parameters(parameters, update)
 
       ene_gradient = 2 * total_lene_gradient - 2 * total_gradient * total_energy
@@ -216,6 +217,7 @@ def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, s
     comm.barrier()
     parameters = comm.bcast(new_parameters, root=0)
     comm.barrier()
+    step_size *= 0.99
 
   weights = np.array(weights)
   energies = np.array(weights * energies)

@@ -73,7 +73,7 @@ class holstein_1d():
     return energy, qp_weight, overlap_gradient, weight, walker
 
   def __hash__(self):
-    return hash((self.omega, self.g))
+    return hash((self.omega, self.g, self.dtype, self.zero_dtype))
 
 @dataclass
 class ssh_1d():
