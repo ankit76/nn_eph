@@ -21,7 +21,7 @@ rank = comm.Get_rank()
 if rank == 0:
   print(f'# Number of cores: {size}\n#')
 
-n_sites = 32
+n_sites = 10
 lattice = lattices.one_dimensional_chain(n_sites)
 
 omega_k = tuple(0.5 for _ in range(n_sites))
@@ -37,16 +37,16 @@ nn_parameters_phi = model_phi.init(random.PRNGKey(1), model_input, mutable=True)
 n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(
     nn_parameters_r)) + sum(x.size for x in tree_util.tree_leaves(nn_parameters_phi))
 parameters = [ nn_parameters_r, nn_parameters_phi ]
-wave = wavefunctions.nn_complex(model_r.apply, model_phi.apply, n_nn_parameters)
+wave = wavefunctions.nn_complex(model_r.apply, model_phi.apply, n_nn_parameters, get_input=wavefunctions.get_input_k)
 
 seed = 789941
 n_eql = 100
 n_samples = 10000
-sampler = samplers.continuous_time(n_eql, n_samples)
+sampler = samplers.continuous_time_sr(n_eql, n_samples)
 
-walker = [ (16,), jnp.array([ 1 ] + [ 0 ] * (n_sites - 1)) ]
+walker = [ (0,), jnp.array([ 0 ] + [ 0 ] * (n_sites - 1)) ]
 n_steps = 1000
-step_size = 0.02
+step_size = 0.2
 
 if rank == 0:
   #print(f'# omega: {omega}')
@@ -57,5 +57,5 @@ if rank == 0:
   print(f'# seed: {seed}')
   print(f'# number of parameters: {wave.n_parameters}\n#')
 
-driver.driver(walker, ham, parameters, wave, lattice, sampler, n_steps=n_steps, step_size=step_size, seed=seed)
+driver.driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps=n_steps, step_size=step_size, seed=seed)
 
