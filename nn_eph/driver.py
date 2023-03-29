@@ -24,6 +24,7 @@ def driver(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, step
   moment_2 = jnp.zeros(wave.n_parameters)
   decay_1 = 0.1
   decay_2 = 0.01
+  momentum = 0.
   key = random.PRNGKey(seed + rank)
 
   if rank == 0:
@@ -116,7 +117,7 @@ def driver(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, step
     #np.savetxt('parameters.dat', parameters[0])
     np.savetxt('samples.dat', np.stack((total_weights, total_energies)).T)
     stat_utils.blocking_analysis(total_weights, total_energies, neql = 0, printQ = True, writeBlockedQ = False)
-
+  return parameters
 
 def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, step_size = 0.1, seed = 0):
   moment_1 = jnp.zeros(wave.n_parameters)
@@ -181,12 +182,15 @@ def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, s
       metric[1:,1:] = total_metric + np.diag(np.ones(wave.n_parameters) * 1.e-3)
       metric[0, 1:] = total_gradient
       metric[1:, 0] = total_gradient
+      ev, _ = np.linalg.eigh(metric)
+      #np.savetxt(f'metric_{iteration}', ev)
       y_vec = np.zeros(wave.n_parameters + 1)
       y_vec[0] = 1 - step_size * total_energy
       y_vec[1:] = total_gradient - total_lene_gradient * step_size
       update = np.linalg.solve(metric, y_vec)
+      #np.savetxt(f'update_{iteration}', update)
       update = update[1:] / update[0]
-      update[np.abs(update) > 1.e+3 * 0.99**iteration] = 0.
+      update[np.abs(update) > 1.e+3 * 0.999**iteration] = 0.
       new_parameters = wave.update_parameters(parameters, update)
 
       ene_gradient = 2 * total_lene_gradient - 2 * total_gradient * total_energy
@@ -217,7 +221,7 @@ def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, s
     comm.barrier()
     parameters = comm.bcast(new_parameters, root=0)
     comm.barrier()
-    step_size *= 0.99
+    step_size *= 0.999
 
   weights = np.array(weights)
   energies = np.array(weights * energies)
@@ -233,6 +237,8 @@ def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, s
     #np.savetxt('parameters.dat', parameters[0])
     np.savetxt('samples.dat', np.stack((total_weights, total_energies)).T)
     stat_utils.blocking_analysis(total_weights, total_energies, neql = 0, printQ = True, writeBlockedQ = False)
+
+  return parameters
 
 if __name__ == "__main__":
   import lattices, models, wavefunctions, hamiltonians, samplers
