@@ -10,7 +10,7 @@ import jax.scipy as jsp
 from jax import lax, jit, custom_jvp, vmap, random, vjp, checkpoint, value_and_grad, tree_util
 import jax
 from mpi4py import MPI
-import stat_utils
+from nn_eph import stat_utils
 
 from functools import partial
 print = partial(print, flush=True)
