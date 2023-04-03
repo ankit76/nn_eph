@@ -512,3 +512,75 @@ class nn_jastrow_2():
 
   def __hash__(self):
     return hash((self.nn_apply, self.reference, self.ee_jastrow, self.n_parameters))
+
+
+@dataclass
+class nn_complex_2():
+  nn_apply_r: Callable
+  nn_apply_phi: Callable
+  n_parameters: int
+  k: Sequence = None
+
+  # TODO: needs to be changed for ssh > 1d, and for 2 sites
+  @partial(jit, static_argnums=(0, 3))
+  def get_input_2(self, elec_pos, phonon_occ, lattice_shape):
+    elec_pos_ar = jnp.zeros(lattice_shape)
+    elec_pos_ar = elec_pos_ar.at[elec_pos[0]].add(1)
+    elec_pos_ar = elec_pos_ar.at[elec_pos[1]].add(1)
+    input_ar = jnp.stack([ elec_pos_ar, *phonon_occ.reshape(-1, *lattice_shape) ], axis=-1)
+    return input_ar
+
+  def serialize(self, parameters):
+    flat_tree = tree_util.tree_flatten(parameters[0])[0]
+    serialized_1 = jnp.reshape(flat_tree[0], (-1))
+    for params in flat_tree[1:]:
+      serialized_1 = jnp.concatenate((serialized_1, jnp.reshape(params, -1)))
+    flat_tree = tree_util.tree_flatten(parameters[1])[0]
+    serialized_2 = jnp.reshape(flat_tree[0], (-1))
+    for params in flat_tree[1:]:
+      serialized_2 = jnp.concatenate((serialized_2, jnp.reshape(params, -1)))
+    serialized = jnp.concatenate((serialized_1, serialized_2))
+    return serialized
+
+  # update is serialized, parameters are not
+  def update_parameters(self, parameters, update):
+    flat_tree, tree = tree_util.tree_flatten(parameters[0])
+    counter = 0
+    for i in range(len(flat_tree)):
+      flat_tree[i] += self.mask[0] * update[counter: counter +
+                                            flat_tree[i].size].reshape(flat_tree[i].shape)
+      counter += flat_tree[i].size
+    parameters[0] = tree_util.tree_unflatten(tree, flat_tree)
+
+    flat_tree, tree = tree_util.tree_flatten(parameters[1])
+    for i in range(len(flat_tree)):
+      flat_tree[i] += self.mask[1] * update[counter: counter +
+                                            flat_tree[i].size].reshape(flat_tree[i].shape)
+      counter += flat_tree[i].size
+    parameters[1] = tree_util.tree_unflatten(tree, flat_tree)
+    return parameters
+
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
+    nn_r = parameters[0]
+    nn_phi = parameters[1]
+    inputs = self.get_input_2(elec_pos, phonon_occ, lattice.shape)
+    outputs_r = jnp.array(self.nn_apply_r(nn_r, inputs + 0.j), dtype='complex128')
+    outputs_phi = jnp.array(self.nn_apply_phi(nn_phi, inputs + 0.j), dtype='complex128')
+    overlap = jnp.exp(outputs_r[0]) * jnp.exp(1.j * jnp.sum(outputs_phi))
+    symm_fac = lattice.get_symm_fac(elec_pos[0], self.k)
+    return overlap * symm_fac
+
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+    value, grad_fun = vjp(self.calc_overlap_map, elec_pos,
+                          phonon_occ, parameters, lattice)
+    gradient = grad_fun(jnp.array([1. + 0.j], dtype='complex128')[0])[2]
+    #value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
+    gradient = self.serialize(gradient)
+    gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
+    return gradient / value
+
+  def __hash__(self):
+    return hash((self.nn_apply_r, self.nn_apply_phi, self.n_parameters, self.k))
+

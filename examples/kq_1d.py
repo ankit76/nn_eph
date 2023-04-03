@@ -8,6 +8,7 @@ import jax.numpy as jnp
 from jax import lax, jit, custom_jvp, vmap, random, vjp, checkpoint, value_and_grad, tree_util
 import jax
 from mpi4py import MPI
+from flax import linen as nn
 
 from functools import partial
 print = partial(print, flush=True)
@@ -21,16 +22,25 @@ rank = comm.Get_rank()
 if rank == 0:
   print(f'# Number of cores: {size}\n#')
 
-n_sites = 10
+n_sites = 4
 lattice = lattices.one_dimensional_chain(n_sites)
 
-omega_k = tuple(0.5 for _ in range(n_sites))
+#omega_k = tuple(0.5 for _ in range(n_sites))
+#e_k = tuple(-2. * np.cos(2. * np.pi * k / n_sites) for k in range(n_sites))
+#g = tuple(tuple(-0.5/n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites))
+
+w = 3.
+lam = 0.5
+g = (lam * omega / 2)**0.5
+
+omega_k = tuple(3. for _ in range(n_sites))
 e_k = tuple(-2. * np.cos(2. * np.pi * k / n_sites) for k in range(n_sites))
-g = tuple(tuple(-0.5/n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites))
-ham = hamiltonians.kq_1d(omega_k, e_k, g)
+g_kq = tuple(tuple(2.j * g * (np.sin(2. * np.pi * (i+j) / n_sites) - np.sin(2. * np.pi * i / n_sites)) / n_sites**0.5 for i in range(n_sites)) for j in range(n_sites))
+
+ham = hamiltonians.kq_1d(omega_k, e_k, g_kq)
 
 model_r = models.MLP([20, 1], param_dtype=jnp.complex64, kernel_init=models.complex_kernel_init)
-model_phi = models.MLP([10, 1], param_dtype=jnp.complex64, kernel_init=models.complex_kernel_init)
+model_phi = models.MLP([10, 1], param_dtype=jnp.complex64, kernel_init=models.complex_kernel_init, activation=nn.tanh)
 model_input = jnp.zeros(2*n_sites)
 nn_parameters_r = model_r.init(random.PRNGKey(0), model_input, mutable=True)
 nn_parameters_phi = model_phi.init(random.PRNGKey(1), model_input, mutable=True)
@@ -43,10 +53,11 @@ seed = 789941
 n_eql = 100
 n_samples = 10000
 sampler = samplers.continuous_time_sr(n_eql, n_samples)
+#sampler = samplers.continuous_time_sr(n_eql, n_samples)
 
-walker = [ (0,), jnp.array([ 0 ] + [ 0 ] * (n_sites - 1)) ]
+walker = [ (1,), jnp.array([ 0 ] + [ 0 ] * (n_sites - 1)) ]
 n_steps = 1000
-step_size = 0.2
+step_size = 0.1
 
 if rank == 0:
   #print(f'# omega: {omega}')
@@ -58,4 +69,5 @@ if rank == 0:
   print(f'# number of parameters: {wave.n_parameters}\n#')
 
 driver.driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps=n_steps, step_size=step_size, seed=seed)
+#driver.driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps=n_steps, step_size=step_size, seed=seed)
 
