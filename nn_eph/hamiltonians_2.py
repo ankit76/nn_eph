@@ -1,7 +1,7 @@
 import os
 import numpy as np
 os.environ['JAX_PLATFORM_NAME'] = 'cpu'
-os.environ['JAX_ENABLE_X64'] = 'True'
+#os.environ['JAX_ENABLE_X64'] = 'True'
 import jax
 from jax import random, lax, tree_util, grad, value_and_grad, jit, numpy as jnp
 from flax import linen as nn

@@ -1,6 +1,6 @@
 import os
 os.environ['JAX_PLATFORM_NAME'] = 'cpu'
-os.environ['JAX_ENABLE_X64'] = 'True'
+#os.environ['JAX_ENABLE_X64'] = 'True'
 import pytest
 from jax import random, numpy as jnp
 from nn_eph import models

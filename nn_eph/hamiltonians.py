@@ -1,7 +1,7 @@
 import os
 import numpy as np
 os.environ['JAX_PLATFORM_NAME'] = 'cpu'
-os.environ['JAX_ENABLE_X64'] = 'True'
+#os.environ['JAX_ENABLE_X64'] = 'True'
 import jax
 from jax import random, lax, tree_util, grad, value_and_grad, jit, numpy as jnp
 from flax import linen as nn
@@ -13,8 +13,8 @@ from functools import partial
 class holstein_1d():
   omega: float
   g: float
-  dtype: Any = jnp.float64   # this should be handled in the wave function
-  zero_dtype: Any = jnp.array([0.], dtype=jnp.float64)[0]
+  dtype: Any = jnp.float32   # this should be handled in the wave function
+  zero_dtype: Any = jnp.array([0.], dtype=jnp.float32)[0]
   max_n_phonons: Any = jnp.inf
 
   def __post_init__(self):

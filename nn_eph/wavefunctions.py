@@ -1,7 +1,7 @@
 import os
 import numpy as np
 os.environ['JAX_PLATFORM_NAME'] = 'cpu'
-os.environ['JAX_ENABLE_X64'] = 'True'
+#os.environ['JAX_ENABLE_X64'] = 'True'
 from jax import random, lax, tree_util, grad, value_and_grad, vjp, jit, numpy as jnp
 from flax import linen as nn
 from typing import Sequence, Tuple, Callable, Any
@@ -370,7 +370,7 @@ class nn_jastrow():
   def calc_overlap(self, elec_pos, phonon_occ, parameters, lattice):
     nn = parameters[1]
     inputs = self.get_input(elec_pos, phonon_occ, lattice.shape)
-    outputs = jnp.array(self.nn_apply(nn, inputs), dtype='float64')
+    outputs = jnp.array(self.nn_apply(nn, inputs), dtype='float32')
     jastrow = jnp.exp(outputs[0])
 
     ref_overlap = self.reference.calc_overlap(elec_pos, phonon_occ, parameters[0], lattice)
@@ -433,8 +433,8 @@ class nn_complex():
     nn_r = parameters[0]
     nn_phi = parameters[1]
     inputs = self.get_input(elec_pos, phonon_occ, lattice.shape)
-    outputs_r = jnp.array(self.nn_apply_r(nn_r, inputs + 0.j), dtype='complex128')
-    outputs_phi = jnp.array(self.nn_apply_phi(nn_phi, inputs + 0.j), dtype='complex128')
+    outputs_r = jnp.array(self.nn_apply_r(nn_r, inputs + 0.j), dtype='complex64')
+    outputs_phi = jnp.array(self.nn_apply_phi(nn_phi, inputs + 0.j), dtype='complex64')
     overlap = jnp.exp(outputs_r[0]) * jnp.exp(1.j * jnp.sum(outputs_phi))
 
     symm_fac = lattice.get_symm_fac(elec_pos, self.k)
@@ -443,7 +443,7 @@ class nn_complex():
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
     value, grad_fun = vjp(self.calc_overlap, elec_pos, phonon_occ, parameters, lattice)
-    gradient = grad_fun(jnp.array([1. + 0.j], dtype='complex128')[0])[2]
+    gradient = grad_fun(jnp.array([1. + 0.j], dtype='complex64')[0])[2]
     #value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
     gradient = self.serialize(gradient)
     gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
@@ -495,7 +495,7 @@ class nn_jastrow_2():
   def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
     nn = parameters[1]
     inputs = self.get_input_2(elec_pos, phonon_occ, lattice.shape)
-    outputs = jnp.array(self.nn_apply(nn, inputs), dtype='float64')
+    outputs = jnp.array(self.nn_apply(nn, inputs), dtype='float32')
     jastrow = jnp.exp(outputs[0])
 
     ref_overlap = self.reference.calc_overlap_map(elec_pos, phonon_occ, parameters[0], lattice)
