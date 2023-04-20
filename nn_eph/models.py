@@ -12,18 +12,25 @@ def complex_kernel_init(rng, shape, dtype):
   x = random.normal(rng, shape) + 0.j
   return x * (fan_in * 2)**(-0.5)
 
+def complex_kernel_init_1(rng, shape, dtype):
+  fan_in = np.prod(shape) // shape[-1]
+  x = random.normal(rng, shape) + 0.j
+  return 3. * x
+
 class MLP(nn.Module):
   n_neurons: Sequence[int]
   activation: Any = nn.relu
   kernel_init: Any = jax.nn.initializers.lecun_normal()
+  bias_init: Any = jax.nn.initializers.zeros
+  #bias_init: Any = jax.nn.initializers.ones
   param_dtype: Any = jnp.float32
 
   @nn.compact
   def __call__(self, x):
     x = x.reshape(-1)
     for n in self.n_neurons[:-1]:
-      x = self.activation(nn.Dense(n, param_dtype=self.param_dtype, kernel_init=self.kernel_init)(x))
-    x = nn.Dense(self.n_neurons[-1], param_dtype=self.param_dtype, kernel_init=self.kernel_init)(x)
+      x = self.activation(nn.Dense(n, param_dtype=self.param_dtype, kernel_init=self.kernel_init, bias_init=self.bias_init)(x))
+    x = nn.Dense(self.n_neurons[-1], param_dtype=self.param_dtype, kernel_init=self.kernel_init, bias_init=self.bias_init)(x)
     return x
 
 
