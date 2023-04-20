@@ -182,8 +182,16 @@ def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, s
       metric[1:,1:] = total_metric + np.diag(np.ones(wave.n_parameters) * 1.e-3)
       metric[0, 1:] = total_gradient
       metric[1:, 0] = total_gradient
-      ev, _ = np.linalg.eigh(metric)
-      #np.savetxt(f'metric_{iteration}', ev)
+      try:
+        ev, _ = np.linalg.eigh(metric)
+      except:
+        if rank == 0:
+          np.savetxt(f'metric_{iteration}.dat', metric)
+          print(f'total energy: {total_energy}')
+          print(f'gradient: {total_gradient}')
+          print(f'lene gradient: {total_lene_gradient}')
+          print(f'parameters:\n{parameters}')
+        exit()
       y_vec = np.zeros(wave.n_parameters + 1)
       y_vec[0] = 1 - step_size * total_energy
       y_vec[1:] = total_gradient - total_lene_gradient * step_size
@@ -274,5 +282,4 @@ if __name__ == "__main__":
     print(f'# number of parameters: {wave.n_parameters}\n#')
 
   driver(walker, ham, parameters, wave, lattice, sampler, n_steps, step_size = 0.01)
-
 
