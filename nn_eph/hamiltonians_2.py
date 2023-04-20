@@ -87,7 +87,7 @@ class holstein_1d():
     walker[1] = lax.cond(new_ind > 5, lambda x: x.at[elec_pos[1]].add(-2*new_ind + 13), lambda x: x, walker[1])
     walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
 
-    return energy, qp_weight, overlap_gradient, weight, walker
+    return energy, qp_weight, overlap_gradient, weight, walker, overlap
 
   def __hash__(self):
     return hash((self.omega, self.g, self.triplet))
@@ -183,7 +183,7 @@ class long_range_1d():
     walker[1] = lax.cond(new_ind > 3, lambda x: x.at[(new_ind - 4) // 2].add(1 - 2*((new_ind - 4) % 2)), lambda x: x, walker[1])
     walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
 
-    return energy, qp_weight, overlap_gradient, weight, walker
+    return energy, qp_weight, overlap_gradient, weight, walker, overlap
 
   def __hash__(self):
     return hash((self.omega, self.g, self.zeta, self.triplet))
@@ -395,7 +395,7 @@ class ssh_2d():
     walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
     #jax.debug.print('new_walker:\n{}\n', walker)
 
-    return energy, qp_weight, overlap_gradient, weight, walker
+    return energy, qp_weight, overlap_gradient, weight, walker, overlap
 
   def __hash__(self):
     return hash((self.omega, self.g, self.u))
@@ -532,7 +532,7 @@ class long_range_2d():
     walker[1] = lax.cond(new_ind >= 8, lambda w: w.at[(*(lattice_sites[(new_ind - 8)//2]),)].add(1 - 2*((new_ind - 8) % 2)), lambda w: w, walker[1])
     walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
 
-    return energy, qp_weight, overlap_gradient, weight, walker
+    return energy, qp_weight, overlap_gradient, weight, walker, overlap
 
   def __hash__(self):
     return hash((self.omega, self.g, self.zeta, self.triplet))

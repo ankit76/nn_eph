@@ -8,6 +8,34 @@ from dataclasses import dataclass
 from functools import partial
 from jax.tree_util import register_pytree_node_class
 
+def make_phonon_basis(n_sites, max_phonons):
+  basis = [ ]
+  coefficients = [ 1 for _ in range(n_sites) ]
+  for i in range(max_phonons+1):
+    basis += frobenius(n_sites, coefficients, i)
+  return basis
+
+def frobenius(n, coefficients, target):
+  def backtrack(index, current_solution):
+    nonlocal solutions
+
+    # Base case: when we have n integers in the solution
+    if index == n:
+      # Check if the current solution satisfies the Frobenius equation
+      if sum([coefficients[i] * current_solution[i] for i in range(n)]) == target:
+        solutions.append(jnp.array(current_solution))
+      return
+
+    # Recursive case: for each possible value of the current integer
+    for i in range(target + 1):
+      current_solution[index] = i
+      backtrack(index + 1, current_solution)
+
+  solutions = []
+  current_solution = [0] * n
+  backtrack(0, current_solution)
+  return solutions
+
 @dataclass
 @register_pytree_node_class
 class one_dimensional_chain():
@@ -20,6 +48,11 @@ class one_dimensional_chain():
     self.shape = (self.n_sites,)
     self.sites = tuple([ (i,) for i in range(self.n_sites) ])
     self.bonds = tuple([ (i,) for i in range(self.n_sites) ]) if self.n_sites > 2 else tuple([ (0,) ])
+
+  def make_polaron_basis(self, max_n_phonons):
+    phonon_basis = make_phonon_basis(self.n_sites, max_n_phonons)
+    polaron_basis = tuple([ (i,), phonon_state ] for i in range(self.n_sites) for phonon_state in phonon_basis)
+    return polaron_basis
 
   def get_symm_fac(self, pos, k):
     return jnp.exp(2 * jnp.pi * 1.j * k[0] * pos[0] / self.n_sites) if k is not None else 1.
@@ -174,3 +207,8 @@ class three_dimensional_grid():
 
   def __hash__(self):
     return hash((self.l_x, self.l_y, self.l_z, self.shape, self.shell_distances, self.sites, self.bonds))
+
+if __name__ == "__main__":
+  lattice = one_dimensional_chain(2)
+  basis = lattice.make_polaron_basis(1)
+  print(basis)

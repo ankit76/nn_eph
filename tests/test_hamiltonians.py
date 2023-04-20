@@ -75,7 +75,7 @@ walker_3d = [ (0, 0, 0), phonon_occ ]
 def test_holstein_1d():
   ham = hamiltonians.holstein_1d(1., 1.)
   random_number = 0.5
-  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_1d, parameters_1d, wave_h_1d, lattice_1d, random_number)
+  energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_1d, parameters_1d, wave_h_1d, lattice_1d, random_number)
   assert np.allclose(energy, -32.4191830535864)
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 28.137563833940348)
@@ -85,7 +85,7 @@ def test_holstein_1d():
 def test_holstein_1d_2():
   ham = hamiltonians_2.holstein_1d(1., 1., 1.)
   random_number = 0.5
-  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_1d_2, gamma_1d, reference_h_1d, lattice_1d, random_number)
+  energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_1d_2, gamma_1d, reference_h_1d, lattice_1d, random_number)
   assert np.allclose(energy, -18.943967797424914)
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 21.620797603398334)
@@ -95,7 +95,7 @@ def test_holstein_1d_2():
 def test_long_range_1d():
   ham = hamiltonians.long_range_1d(1., 1., 1.)
   random_number = 0.5
-  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_1d, parameters_1d, wave_h_1d, lattice_1d, random_number)
+  energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_1d, parameters_1d, wave_h_1d, lattice_1d, random_number)
   assert np.allclose(energy, -32.47901747694962)
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 28.137563833940348)
@@ -105,7 +105,7 @@ def test_long_range_1d():
 def test_long_range_1d_2():
   ham = hamiltonians_2.long_range_1d(1., 1., 1., 1.)
   random_number = 0.5
-  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_1d_2, gamma_1d, reference_h_1d, lattice_1d, random_number)
+  energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_1d_2, gamma_1d, reference_h_1d, lattice_1d, random_number)
   assert np.allclose(energy, -20.63895349095183)
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 21.620797603398334)
@@ -115,7 +115,7 @@ def test_long_range_1d_2():
 def test_ssh_1d():
   ham = hamiltonians.ssh_1d(1., 1.)
   random_number = 0.5
-  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_1d, parameters_1d, wave_s_1d, lattice_1d, random_number)
+  energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_1d, parameters_1d, wave_s_1d, lattice_1d, random_number)
   assert np.allclose(energy, -30.099586948140804)
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 23.908205908185963)
@@ -126,7 +126,7 @@ def test_bm_ssh_1d():
   ham = hamiltonians.bm_ssh_1d(1., 1.)
   random_number = 0.5
   walker_1d = [(0,), jnp.array([ 2, 0, 0, 0 ])]
-  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_1d, gamma_1d, reference_bm_s_1d, lattice_1d, random_number)
+  energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_1d, gamma_1d, reference_bm_s_1d, lattice_1d, random_number)
   assert np.allclose(energy, -27.78881273208553)
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 28.64919274)
@@ -136,7 +136,7 @@ def test_bm_ssh_1d():
 def test_holstein_2d():
   ham = hamiltonians.holstein_2d(1., 1.)
   random_number = 0.5
-  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_2d, parameters_2d, wave_2d, lattice_2d, random_number)
+  energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_2d, parameters_2d, wave_2d, lattice_2d, random_number)
   assert np.allclose(energy, -4.604745245749261)
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 20.663823636174804)
@@ -145,7 +145,7 @@ def test_holstein_2d():
 def test_ssh_2d():
   ham = hamiltonians.ssh_2d(1., 1.)
   random_number = 0.5
-  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_s_2d, parameters_s_2d, wave_s_2d, lattice_2d, random_number)
+  energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_s_2d, parameters_s_2d, wave_s_2d, lattice_2d, random_number)
   assert np.allclose(energy, -49.956671130407884)
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 399.1125417937265)
@@ -154,7 +154,7 @@ def test_ssh_2d():
 def test_ssh_2d_2():
   ham = hamiltonians_2.ssh_2d(1., 1., 1.)
   random_number = 0.5
-  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_s_2d_2, gamma_s_2d, reference_s_2d, lattice_2d, random_number)
+  energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_s_2d_2, gamma_s_2d, reference_s_2d, lattice_2d, random_number)
   assert np.allclose(energy, -12.836294885966295)
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 44.022228220244706)
@@ -163,7 +163,7 @@ def test_ssh_2d_2():
 def test_long_range_2d():
   ham = hamiltonians.long_range_2d(1., 1., 1.)
   random_number = 0.5
-  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_2d, parameters_2d, wave_2d, lattice_2d, random_number)
+  energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_2d, parameters_2d, wave_2d, lattice_2d, random_number)
   assert np.allclose(energy, -7.768236289696451)
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 20.663823636174804)
@@ -172,7 +172,7 @@ def test_long_range_2d():
 def test_long_range_2d_2():
   ham = hamiltonians_2.long_range_2d(1., 1., 1., 1.)
   random_number = 0.5
-  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_2d_2, gamma_2d, reference_2d, lattice_2d, random_number)
+  energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_2d_2, gamma_2d, reference_2d, lattice_2d, random_number)
   assert np.allclose(energy, -6.061611058904939)
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 19.116589584055067)
@@ -181,7 +181,7 @@ def test_long_range_2d_2():
 def test_holstein_3d():
   ham = hamiltonians.holstein_3d(1., 1.)
   random_number = 0.5
-  energy, qp_weight, overlap_gradient, weight, walker = ham.local_energy_and_update(walker_3d, parameters_3d, wave_3d, lattice_3d, random_number)
+  energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_3d, parameters_3d, wave_3d, lattice_3d, random_number)
   assert np.allclose(energy, -4.785211306275675)
   assert np.allclose(qp_weight, 0.0)
   assert np.allclose(sum(overlap_gradient), 18.07855867695138)
