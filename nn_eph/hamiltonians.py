@@ -113,6 +113,7 @@ class kq_1d():
       carry[1] = carry[1].at[2*kp].set(ratio)
 
       new_phonon_occ = phonon_occ.at[qd].add(-1)
+      new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
       ratio = (phonon_occ[qd])**0.5 * wave.calc_overlap(new_elec_k, new_phonon_occ, parameters, lattice) / overlap
       carry[0] += jnp.array(self.g)[kp, qc] * (phonon_occ[qd])**0.5 * ratio
       carry[1] = carry[1].at[2*kp + 1].set(ratio)
@@ -177,6 +178,7 @@ class ssh_1d():
 
     # destroy phonon
     new_phonon_occ = phonon_occ.at[bond_pos].add(-1)
+    new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
     ratio_0_dp = (phonon_occ[bond_pos])**0.5 * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap
     energy -= self.g * (phonon_occ[bond_pos])**0.5 * ratio_0_dp
 
@@ -195,6 +197,7 @@ class ssh_1d():
 
     # destroy phonon
     new_phonon_occ = phonon_occ.at[bond_pos].add(-1)
+    new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
     ratio_1_dp = lax.cond(n_sites > 2, lambda x: (phonon_occ[bond_pos])**0.5 * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap, lambda x: 0., 0.)
     energy -= self.g * (phonon_occ[bond_pos])**0.5 * ratio_1_dp
 
@@ -262,7 +265,8 @@ class bm_ssh_1d():
 
       # destroy phonon on old site
       new_phonon_occ = phonon_occ.at[elec_pos].add(-1)
-      ratio_1_do = (1 - (n_sites == 2) * (site == 1)) * (phonon_occ[elec_pos])**0.5 * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap
+      new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
+      ratio_1_do = (phonon_occ[elec_pos] > 0) *  (1 - (n_sites == 2) * (site == 1)) * (phonon_occ[elec_pos])**0.5 * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap
       ratios.append(ratio_1_do)
       energy -= hop_sgn * self.g * (phonon_occ[elec_pos])**0.5 * ratio_1_do
 
@@ -274,7 +278,8 @@ class bm_ssh_1d():
 
       # destroy phonon on new site
       new_phonon_occ = phonon_occ.at[new_elec_pos].add(-1)
-      ratio_1_dn = (1 - (n_sites == 2) * (site == 1)) * (phonon_occ[new_elec_pos])**0.5 * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap
+      new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
+      ratio_1_dn = (phonon_occ[new_elec_pos] > 0) * (1 - (n_sites == 2) * (site == 1)) * (phonon_occ[new_elec_pos])**0.5 * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap
       ratios.append(ratio_1_dn)
       energy += hop_sgn * self.g * (phonon_occ[new_elec_pos])**0.5 * ratio_1_dn
 
@@ -299,6 +304,7 @@ class bm_ssh_1d():
     ind_1 = jnp.array([0, 1, -1, 1, -1])[new_ind % 5]
     walker[1] = walker[1].at[ind_0].add(ind_1)
     #jax.debug.print('new_walker: {}', walker)
+    walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
     return energy, qp_weight, overlap_gradient, weight, walker, overlap
 
   def __hash__(self):
@@ -353,6 +359,7 @@ class long_range_1d():
       carry[1] = carry[1].at[2*x + 2].set(ratio)
 
       new_phonon_occ = phonon_occ.at[pos].add(-1)
+      new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
       ratio = (phonon_occ[pos])**0.5 * wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice) / overlap
       carry[0] -= self.g * jnp.exp(-dist / self.zeta) * (phonon_occ[pos])**0.5 * ratio / (1 + dist**2)**1.5
       carry[1] = carry[1].at[2*x + 3].set(ratio)
@@ -429,6 +436,7 @@ class holstein_2d():
     energy -= self.g * (phonon_occ[elec_pos[0], elec_pos[1]] + 1)**0.5 * ratio_2
 
     new_phonon_occ = phonon_occ.at[elec_pos[0], elec_pos[1]].add(-1)
+    new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
     ratio_3 = (phonon_occ[elec_pos[0], elec_pos[1]])**0.5 * wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice) / overlap
     energy -= self.g * (phonon_occ[elec_pos[0], elec_pos[1]])**0.5 * ratio_3
 
@@ -499,6 +507,7 @@ class ssh_2d():
 
     # destroy phonon
     new_phonon_occ = phonon_occ.at[bond_pos_0_x].add(-1)
+    new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
     ratio_0_x_dp = (phonon_occ[bond_pos_0_x])**0.5 * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap
     energy -= self.g * (phonon_occ[bond_pos_0_x])**0.5 * ratio_0_x_dp
 
@@ -517,6 +526,7 @@ class ssh_2d():
 
     # destroy phonon
     new_phonon_occ = phonon_occ.at[bond_pos_1_x].add(-1)
+    new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
     ratio_1_x_dp = lax.cond(l_x > 2, lambda x: (phonon_occ[bond_pos_1_x])**0.5 * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap, lambda x: 0., 0.)
     energy -= self.g * (phonon_occ[bond_pos_1_x])**0.5 * ratio_1_x_dp
 
@@ -535,6 +545,7 @@ class ssh_2d():
 
     # destroy phonon
     new_phonon_occ = phonon_occ.at[bond_pos_0_y].add(-1)
+    new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
     ratio_0_y_dp = (phonon_occ[bond_pos_0_y])**0.5 * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap
     energy -= self.g * (phonon_occ[bond_pos_0_y])**0.5 * ratio_0_y_dp
 
@@ -553,6 +564,7 @@ class ssh_2d():
 
     # destroy phonon
     new_phonon_occ = phonon_occ.at[bond_pos_1_y].add(-1)
+    new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
     ratio_1_y_dp = lax.cond(l_y > 2, lambda x: (phonon_occ[bond_pos_1_y])**0.5 * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap, lambda x: 0., 0.)
     energy -= self.g * (phonon_occ[bond_pos_1_y])**0.5 * ratio_1_y_dp
 
@@ -654,6 +666,7 @@ class long_range_2d():
       carry[1] = carry[1].at[2*carry[2] + 4].set(ratio)
 
       new_phonon_occ = phonon_occ.at[pos[0], pos[1]].add(-1)
+      new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
       ratio = (phonon_occ[pos[0], pos[1]])**0.5 * wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice) / overlap
       carry[0] -= self.g * jnp.exp(-dist / self.zeta) * (phonon_occ[pos[0], pos[1]])**0.5 * ratio / (1 + dist**2)**1.5
       carry[1] = carry[1].at[2*carry[2] + 5].set(ratio)
@@ -754,6 +767,7 @@ class holstein_3d():
     energy -= self.g * (phonon_occ[elec_pos[0], elec_pos[1], elec_pos[2]] + 1)**0.5 * ratio_2
 
     new_phonon_occ = phonon_occ.at[elec_pos[0], elec_pos[1], elec_pos[2]].add(-1)
+    new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
     ratio_3 = (phonon_occ[elec_pos[0], elec_pos[1], elec_pos[2]])**0.5 * wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice) / overlap
     energy -= self.g * (phonon_occ[elec_pos[0], elec_pos[1], elec_pos[2]])**0.5 * ratio_3
 
