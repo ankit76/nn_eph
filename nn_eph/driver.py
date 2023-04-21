@@ -144,17 +144,17 @@ def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, s
     weight, energy, gradient, lene_gradient, qp_weight, metric, energies, qp_weights, weights = sampler.sampling(walker, ham, parameters, wave, lattice, random_numbers)
 
     # average and print energies for the current step
-    weight = np.array([ weight ])
-    energy = np.array([ weight * energy ])
-    qp_weight = np.array([ weight * qp_weight ])
-    metric = np.array(weight * metric)
+    weight = np.array([ weight ], dtype='float32')
+    energy = np.array([ weight * energy ], dtype='float32')
+    qp_weight = np.array([ weight * qp_weight ], dtype='float32')
+    metric = np.array(weight * metric, dtype='float32')
     #energy = np.array([ energy ])
     total_weight = 0. * weight
     total_energy = 0. * weight
     total_qp_weight = 0. * weight
     total_metric = 0. * metric
-    gradient = np.array(weight * gradient)
-    lene_gradient = np.array(weight * lene_gradient)
+    gradient = np.array(weight * gradient, dtype='float32')
+    lene_gradient = np.array(weight * lene_gradient, dtype='float32')
     #gradient = np.array(gradient)
     #lene_gradient = np.array(lene_gradient)
     total_gradient = 0. * gradient
