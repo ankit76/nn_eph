@@ -60,11 +60,11 @@ def driver(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, step
     total_lene_gradient = 0. * lene_gradient
 
     comm.barrier()
-    comm.Reduce([weight, MPI.DOUBLE], [total_weight, MPI.DOUBLE], op=MPI.SUM, root=0)
-    comm.Reduce([energy, MPI.DOUBLE], [total_energy, MPI.DOUBLE], op=MPI.SUM, root=0)
-    comm.Reduce([qp_weight, MPI.DOUBLE], [total_qp_weight, MPI.DOUBLE], op=MPI.SUM, root=0)
-    comm.Reduce([gradient, MPI.DOUBLE], [total_gradient, MPI.DOUBLE], op=MPI.SUM, root=0)
-    comm.Reduce([lene_gradient, MPI.DOUBLE], [total_lene_gradient, MPI.DOUBLE], op=MPI.SUM, root=0)
+    comm.Reduce([weight, MPI.FLOAT], [total_weight, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([energy, MPI.FLOAT], [total_energy, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([qp_weight, MPI.FLOAT], [total_qp_weight, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([gradient, MPI.FLOAT], [total_gradient, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([lene_gradient, MPI.FLOAT], [total_lene_gradient, MPI.FLOAT], op=MPI.SUM, root=0)
     comm.barrier()
 
     new_parameters = None
@@ -109,8 +109,8 @@ def driver(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, step
   total_energies = 0. * weights
 
   comm.barrier()
-  comm.Reduce([weights, MPI.DOUBLE], [total_weights, MPI.DOUBLE], op=MPI.SUM, root=0)
-  comm.Reduce([energies, MPI.DOUBLE], [total_energies, MPI.DOUBLE], op=MPI.SUM, root=0)
+  comm.Reduce([weights, MPI.FLOAT], [total_weights, MPI.FLOAT], op=MPI.SUM, root=0)
+  comm.Reduce([energies, MPI.FLOAT], [total_energies, MPI.FLOAT], op=MPI.SUM, root=0)
   comm.barrier()
   if rank == 0:
     total_energies /= total_weights
@@ -161,12 +161,12 @@ def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, s
     total_lene_gradient = 0. * lene_gradient
 
     comm.barrier()
-    comm.Reduce([weight, MPI.DOUBLE], [total_weight, MPI.DOUBLE], op=MPI.SUM, root=0)
-    comm.Reduce([energy, MPI.DOUBLE], [total_energy, MPI.DOUBLE], op=MPI.SUM, root=0)
-    comm.Reduce([qp_weight, MPI.DOUBLE], [total_qp_weight, MPI.DOUBLE], op=MPI.SUM, root=0)
-    comm.Reduce([metric, MPI.DOUBLE], [total_metric, MPI.DOUBLE], op=MPI.SUM, root=0)
-    comm.Reduce([gradient, MPI.DOUBLE], [total_gradient, MPI.DOUBLE], op=MPI.SUM, root=0)
-    comm.Reduce([lene_gradient, MPI.DOUBLE], [total_lene_gradient, MPI.DOUBLE], op=MPI.SUM, root=0)
+    comm.Reduce([weight, MPI.FLOAT], [total_weight, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([energy, MPI.FLOAT], [total_energy, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([qp_weight, MPI.FLOAT], [total_qp_weight, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([metric, MPI.FLOAT], [total_metric, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([gradient, MPI.FLOAT], [total_gradient, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([lene_gradient, MPI.FLOAT], [total_lene_gradient, MPI.FLOAT], op=MPI.SUM, root=0)
     comm.barrier()
 
     new_parameters = None
@@ -237,8 +237,8 @@ def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, s
   total_energies = 0. * weights
 
   comm.barrier()
-  comm.Reduce([weights, MPI.DOUBLE], [total_weights, MPI.DOUBLE], op=MPI.SUM, root=0)
-  comm.Reduce([energies, MPI.DOUBLE], [total_energies, MPI.DOUBLE], op=MPI.SUM, root=0)
+  comm.Reduce([weights, MPI.FLOAT], [total_weights, MPI.FLOAT], op=MPI.SUM, root=0)
+  comm.Reduce([energies, MPI.FLOAT], [total_energies, MPI.FLOAT], op=MPI.SUM, root=0)
   comm.barrier()
   if rank == 0:
     total_energies /= total_weights
