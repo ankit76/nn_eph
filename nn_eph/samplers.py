@@ -125,6 +125,48 @@ class deterministic():
   def __hash__(self):
     return 0
 
+@dataclass
+class deterministic_sr():
+  max_n_phonon: int
+  basis: Sequence = Any
+  n_samples: int = 1
+
+  def __init__(self, max_n_phonon, lattice):
+    self.max_n_phonon = max_n_phonon
+    self.basis = lattice.make_polaron_basis(max_n_phonon)
+
+  #@partial(jit, static_argnums=(0, 2, 4, 5))
+  def sampling(self, walker, ham, parameters, wave, lattice, random_numbers):
+    # carry : [ walker, weight, energy, grad, lene_grad, qp_weight ]
+    #def scanned_fun(carry, x):
+    weight = 0.
+    energy = 0.
+    gradient = jnp.zeros(wave.n_parameters)
+    lene_gradient = jnp.zeros(wave.n_parameters)
+    qp_weight = 0.
+    energies = jnp.zeros(len(self.basis))
+    qp_weights = jnp.zeros(len(self.basis))
+    weights = jnp.zeros(len(self.basis))
+    metric = jnp.zeros((wave.n_parameters, wave.n_parameters))
+    for i, x in enumerate(self.basis):
+      energy_x, qp_weight_x, gradient_x, _, _, overlap_x = ham.local_energy_and_update(x, parameters, wave, lattice, 0.)
+      weight_x = jnp.real(overlap_x.conj() * overlap_x)
+      weights = weights.at[i].set(weight_x)
+      weight += weight_x
+      energy += weight_x * (jnp.real(energy_x) - energy) / weight
+      energies = energies.at[i].set(jnp.real(energy_x))
+      gradient = gradient + weight_x * (jnp.real(gradient_x) - gradient) / weight
+      lene_gradient = lene_gradient + weight_x * (jnp.real(jnp.conjugate(energy_x) * gradient_x) - lene_gradient) / weight
+      qp_weight += weight_x * (qp_weight_x - qp_weight) / weight
+      qp_weights = qp_weights.at[i].set(qp_weight_x)
+      metric = metric + weight_x * (jnp.real(jnp.einsum('i,j->ij', jnp.conj(gradient_x), gradient_x)) - metric) / weight
+
+    # energy, gradient, lene_gradient are weighted
+    return weight, energy, gradient, lene_gradient, qp_weight, metric, energies, qp_weights, weights
+
+  def __hash__(self):
+    return 0
+
 if __name__ == "__main__":
   import lattices, models, wavefunctions, hamiltonians
   #l_x, l_y = 2, 2
