@@ -54,6 +54,13 @@ class one_dimensional_chain():
     polaron_basis = tuple([ (i,), phonon_state ] for i in range(self.n_sites) for phonon_state in phonon_basis)
     return polaron_basis
 
+  def get_marshall_sign(self, walker):
+    if isinstance(walker, list): 
+      # TODO: this is a bit hacky
+      walker = walker[0]  
+    walker_a = walker[::2]
+    return (-1)**jnp.sum(jnp.where(walker_a > 0, 1, 0))
+  
   def get_symm_fac(self, pos, k):
     return jnp.exp(2 * jnp.pi * 1.j * k[0] * pos[0] / self.n_sites) if k is not None else 1.
 
@@ -119,6 +126,13 @@ class two_dimensional_grid():
     else:
       self.bonds = tuple([ (0, i // self.l_x, i % self.l_x) for i in range(self.l_x * self.l_y) ] + [ (1, i // self.l_x, i % self.l_x) for i in range(self.l_x * self.l_y) ])
 
+  def get_marshall_sign(self, walker):
+    if isinstance(walker, list): 
+      # TODO: this is a bit hacky
+      walker = walker[0]  
+    walker_a = walker[::2, ::2]
+    return (-1)**jnp.sum(jnp.where(walker_a > 0, 1, 0))
+
   def get_symm_fac(self, pos, k):
     return jnp.exp(2 * jnp.pi * 1.j * k[0] * pos[0] / self.n_sites) * jnp.exp(2 * jnp.pi * 1.j * k[1] * pos[1] / self.n_sites) if k is not None else 1.
 
@@ -154,6 +168,14 @@ class two_dimensional_grid():
       neighbors = [ left, right, down  if pos[0] == 0 else up ]
     else:
       neighbors = [ down, right, up, left ]
+    return jnp.array(neighbors)
+
+  def get_neighboring_sites(self, bond):
+    neighbors = [ ]
+    if bond[0] == 0:
+      neighbors = [ (bond[1], bond[2]), ((bond[1] + 1) % self.l_y, bond[2]) ]
+    else:
+      neighbors = [ (bond[1], bond[2]), (bond[1], (bond[2] + 1) % self.l_x) ]
     return jnp.array(neighbors)
 
   def __hash__(self):
