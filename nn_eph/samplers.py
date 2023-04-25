@@ -22,7 +22,7 @@ class continuous_time():
       carry[2] += weight * (jnp.real(energy) - carry[2]) / carry[1]
       carry[3] = carry[3] + weight * (jnp.real(gradient) - carry[3]) / carry[1]
       carry[4] = carry[4] + weight * (jnp.real(jnp.conjugate(energy) * gradient) - carry[4]) / carry[1]
-      carry[5] += weight * (qp_weight - carry[5]) / carry[1]
+      carry[5] += weight * (jnp.real(qp_weight) - carry[5]) / carry[1]
       return carry, (jnp.real(energy), qp_weight, weight)
 
     weight = 0.
@@ -59,7 +59,7 @@ class continuous_time_sr():
       carry[2] += weight * (jnp.real(energy) - carry[2]) / carry[1]
       carry[3] = carry[3] + weight * (jnp.real(gradient) - carry[3]) / carry[1]
       carry[4] = carry[4] + weight * (jnp.real(jnp.conjugate(energy) * gradient) - carry[4]) / carry[1]
-      carry[5] += weight * (qp_weight - carry[5]) / carry[1]
+      carry[5] += weight * (jnp.real(qp_weight) - carry[5]) / carry[1]
       carry[6] += weight * (jnp.real(jnp.einsum('i,j->ij', jnp.conj(gradient), gradient)) - carry[6]) / carry[1]
       return carry, (jnp.real(energy), qp_weight, weight)
 
