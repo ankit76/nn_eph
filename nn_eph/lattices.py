@@ -49,6 +49,13 @@ class one_dimensional_chain():
     self.sites = tuple([ (i,) for i in range(self.n_sites) ])
     self.bonds = tuple([ (i,) for i in range(self.n_sites) ]) if self.n_sites > 2 else tuple([ (0,) ])
 
+  def get_bond_site_distance(self, bond, site):
+    neigboring_sites = self.get_neighboring_sites(bond)
+    dist_1 = self.get_distance(neigboring_sites[0], site)
+    dist_2 = self.get_distance(neigboring_sites[1], site)
+    lr = (dist_1 < dist_2) * 1. - (dist_1 > dist_2) * 1.
+    return jnp.min(jnp.array([dist_1, dist_2])), lr
+  
   def make_polaron_basis(self, max_n_phonons):
     phonon_basis = make_phonon_basis(self.n_sites, max_n_phonons)
     polaron_basis = tuple([ (i,), phonon_state ] for i in range(self.n_sites) for phonon_state in phonon_basis)
@@ -209,6 +216,9 @@ class three_dimensional_grid():
     return hash((self.l_x, self.l_y, self.l_z, self.shape, self.shell_distances, self.sites, self.bonds))
 
 if __name__ == "__main__":
-  lattice = one_dimensional_chain(2)
-  basis = lattice.make_polaron_basis(1)
-  print(basis)
+  lattice = one_dimensional_chain(4)
+  bond = (1,)
+  site = (0,)
+  print(lattice.get_bond_site_distance(bond, site))
+  #basis = lattice.make_polaron_basis(1)
+  #print(basis)

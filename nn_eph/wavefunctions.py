@@ -7,6 +7,7 @@ from flax import linen as nn
 from typing import Sequence, Tuple, Callable, Any
 from dataclasses import dataclass
 from functools import partial
+import pickle
 
 # TODO: needs to be changed for 2 sites
 @partial(jit, static_argnums=(2,))
@@ -251,7 +252,7 @@ class ssh_merrifield():
     return hash(self.n_parameters)
 
 @dataclass
-class bm_ssh_merrifield():
+class bm_ssh_lf():
   n_parameters: int
 
   def serialize(self, parameters):
@@ -331,6 +332,111 @@ class bm_ssh_merrifield():
     gradient = self.serialize(gradient)
     gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
     return gradient / value
+
+  def __hash__(self):
+    return hash(self.n_parameters)
+
+
+@dataclass
+class bm_ssh_merrifield():
+  n_parameters: int
+
+  def serialize(self, parameters):
+    return parameters
+
+  def update_parameters(self, parameters, update):
+    parameters += update
+    return parameters
+
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap(self, elec_pos, phonon_occ, parameters, lattice):
+    ## carry: [ overlap, bond_position ]
+    #def scanned_fun(carry, x):
+    #  dist = lattice.get_site_bond_distance(x, carry[1])
+    #  carry[0] *= (parameters[dist])**(phonon_occ[(*x,)])
+    #  return carry, x
+    #
+    ## carry: [ overlap ]
+    #def outer_scanned_fun(carry, x):
+    #  overlap = 1.
+    #  [ overlap, _ ], _ = lax.scan(scanned_fun, [ overlap, x ], jnp.array(lattice.bonds))
+    #  carry += overlap
+    #  return carry, x
+    
+    # carry : [ overlap, bond ]
+    def scanned_fun(carry, x):
+      dist, lr = lattice.get_bond_site_distance(carry[1], x)
+      carry[0] *= (lr * parameters[dist])**(phonon_occ[(*x,)])
+      return carry, x
+
+    overlap = 0.
+    neighboring_bonds = lattice.get_neighboring_bonds(elec_pos)
+    for bond in neighboring_bonds:
+      overlap_bond = 1.
+      [ overlap_bond, _ ], _ = lax.scan(scanned_fun, [ overlap_bond, bond ], jnp.array(lattice.sites))
+      overlap += overlap_bond
+      #phonon_sites = lattice.get_neighboring_sites(bond)
+      #overlap += ((parameters[0])**(phonon_occ[(*phonon_sites[0],)])) * ((-parameters[0])**(phonon_occ[(*phonon_sites[1],)])) * (jnp.sum(phonon_occ) == (phonon_occ[(*phonon_sites[0],)] + phonon_occ[(*phonon_sites[1],)]))
+
+    #overlap, _ = lax.scan(outer_scanned_fun, overlap, neighboring_bonds)
+
+    return overlap
+
+  # needs to be fixed
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
+    neighboring_bonds_0 = lattice.get_neighboring_bonds(elec_pos[0])
+    neighboring_bonds_1 = lattice.get_neighboring_bonds(elec_pos[1])
+
+    # carry: [ overlap, bond_position_0, bond_position_1 ]
+    def scanned_fun(carry, x):
+      dist_0 = lattice.get_bond_distance(carry[1], x)
+      dist_1 = lattice.get_bond_distance(carry[2], x)
+      carry[0] *= (parameters[dist_0] + parameters[dist_1])**(phonon_occ[(*x,)])
+      return carry, x
+
+    # carry: [ overlap, bond_position_0 ]
+    def outer_scanned_fun(carry, x):
+      overlap = 1.
+      [ overlap, _, _ ], _ = lax.scan(scanned_fun, [ overlap, carry[1], x ], jnp.array(lattice.bonds))
+      carry[0] += overlap
+      return carry, x
+
+    # carry: [ overlap ]
+    def outer_outer_scanned_fun(carry, x):
+      overlap = 0.
+      [ overlap, _ ], _ = lax.scan(outer_scanned_fun, [ overlap, x ], neighboring_bonds_1)
+      carry += overlap
+      return carry, x
+
+    overlap = 0.
+    overlap, _ = lax.scan(outer_outer_scanned_fun, overlap, neighboring_bonds_0)
+
+    return overlap
+
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+    value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
+    gradient = self.serialize(gradient)
+    gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
+    return gradient / value
+
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+    value, gradient = value_and_grad(self.calc_overlap_map, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
+    gradient = self.serialize(gradient)
+    gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
+    return gradient / value
+
+  def save_params(self, parameters, filename='parameters.bin'):
+    with open(filename, 'wb') as f:
+      pickle.dump(parameters, f)    
+
+  def load_params(self, filename='parameters.bin'):
+    parameters = None
+    with open(filename, 'rb') as f:
+      parameters = pickle.load(f)
+    return parameters
 
   def __hash__(self):
     return hash(self.n_parameters)
@@ -512,3 +618,49 @@ class nn_jastrow_2():
 
   def __hash__(self):
     return hash((self.nn_apply, self.reference, self.ee_jastrow, self.n_parameters))
+
+if __name__ == "__main__":
+  import models, lattices
+  n_sites = 4
+  lattice = lattices.one_dimensional_chain(n_sites)
+
+  model_r = models.MLP([2, 1], param_dtype=jnp.complex64, kernel_init=models.complex_kernel_init)
+  model_phi = models.MLP([2, 1], activation=lambda x: jnp.log(jnp.cosh(x)), param_dtype=jnp.complex64, kernel_init=models.complex_kernel_init)
+  model_input = jnp.zeros(n_sites)
+  nn_parameters_r = model_r.init(random.PRNGKey(0), model_input, mutable=True)
+  nn_parameters_phi = model_phi.init(random.PRNGKey(1), model_input, mutable=True)
+  n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters_r)) + sum(x.size for x in tree_util.tree_leaves(nn_parameters_phi))
+  parameters = [ nn_parameters_r, nn_parameters_phi ]
+  wave = nn_complex(model_r.apply, model_phi.apply, n_nn_parameters)
+  
+  elec_pos = (0,)
+  phonon_occ = jnp.array([ 2, 0, 1, 0 ])
+  overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
+  gradient_ratio = wave.calc_overlap_gradient(elec_pos, phonon_occ, parameters, lattice)
+  print(f'overlap: {overlap}')
+  print(f'gradient: {gradient_ratio * overlap}')
+
+  eps = 0.0001
+  update = jnp.zeros(n_nn_parameters)
+  update = update.at[-3].set(eps)
+  #print(parameters[0])
+  flat_tree, tree = tree_util.tree_flatten(parameters[0])
+  counter = 0
+  for i in range(len(flat_tree)):
+    flat_tree[i] += update[counter: counter + flat_tree[i].size].reshape(flat_tree[i].shape)
+    counter += flat_tree[i].size
+  parameters[0] = tree_util.tree_unflatten(tree, flat_tree)
+
+  flat_tree, tree = tree_util.tree_flatten(parameters[1])
+  for i in range(len(flat_tree)):
+    flat_tree[i] += update[counter: counter + flat_tree[i].size].reshape(flat_tree[i].shape)
+    counter += flat_tree[i].size
+  parameters[1] = tree_util.tree_unflatten(tree, flat_tree)  
+
+  overlap_1 = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
+  print(f'overlap_1: {overlap_1}')
+  print(f'fd grad: {(overlap_1 - overlap) / eps}')
+  #print(parameters[0])
+  #print(overlap)
+  #print(gradient_ratio)
+
