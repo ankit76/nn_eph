@@ -2,6 +2,7 @@ import os
 import numpy as np
 os.environ['JAX_PLATFORM_NAME'] = 'cpu'
 #os.environ['JAX_ENABLE_X64'] = 'True'
+#os.environ['JAX_DISABLE_JIT'] = 'True'
 from jax import random, lax, tree_util, grad, value_and_grad, vjp, jit, numpy as jnp
 from flax import linen as nn
 from typing import Sequence, Tuple, Callable, Any
@@ -25,6 +26,17 @@ def get_input_k(elec_k, phonon_occ, lattice_shape):
   elec_k_ar = jnp.zeros(lattice_shape)
   elec_k_ar = elec_k_ar.at[elec_k].set(1)
   input_ar = jnp.stack([ elec_k_ar, *phonon_occ.reshape(-1, *lattice_shape) ], axis=-1)
+  return input_ar
+
+@partial(jit, static_argnums=(1,))
+def get_input_spins(walker, lattice_shape):
+  return walker
+
+@partial(jit, static_argnums=(1,))
+def get_input_spin_phonon(walker, lattice_shape):
+  spins = walker[0]
+  phonons = walker[1]
+  input_ar = jnp.stack([spins, *phonons.reshape(-1, *lattice_shape)], axis=-1)
   return input_ar
 
 
@@ -618,6 +630,73 @@ class nn_jastrow_2():
 
   def __hash__(self):
     return hash((self.nn_apply, self.reference, self.ee_jastrow, self.n_parameters))
+
+
+@dataclass
+class spin_nn_complex():
+  nn_apply_r: Callable
+  nn_apply_phi: Callable
+  n_parameters: int
+  mask: Sequence = None
+  k: Sequence = None
+  get_input: Callable = get_input_spins
+
+  def __post_init__(self):
+    if self.mask is None:
+      self.mask = jnp.array([1., 1.])
+
+  def serialize(self, parameters):
+    flat_tree = tree_util.tree_flatten(parameters[0])[0]
+    serialized_1 = jnp.reshape(flat_tree[0], (-1))
+    for params in flat_tree[1:]:
+      serialized_1 = jnp.concatenate((serialized_1, jnp.reshape(params, -1)))
+    flat_tree = tree_util.tree_flatten(parameters[1])[0]
+    serialized_2 = jnp.reshape(flat_tree[0], (-1))
+    for params in flat_tree[1:]:
+      serialized_2 = jnp.concatenate((serialized_2, jnp.reshape(params, -1)))
+    serialized = jnp.concatenate((serialized_1, serialized_2))
+    return serialized
+
+  # update is serialized, parameters are not
+  def update_parameters(self, parameters, update):
+    flat_tree, tree = tree_util.tree_flatten(parameters[0])
+    counter = 0
+    for i in range(len(flat_tree)):
+      flat_tree[i] += self.mask[0] * update[counter: counter +
+                                            flat_tree[i].size].reshape(flat_tree[i].shape)
+      counter += flat_tree[i].size
+    parameters[0] = tree_util.tree_unflatten(tree, flat_tree)
+
+    flat_tree, tree = tree_util.tree_flatten(parameters[1])
+    for i in range(len(flat_tree)):
+      flat_tree[i] += self.mask[1] * update[counter: counter +
+                                            flat_tree[i].size].reshape(flat_tree[i].shape)
+      counter += flat_tree[i].size
+    parameters[1] = tree_util.tree_unflatten(tree, flat_tree)
+    return parameters
+
+  @partial(jit, static_argnums=(0, 3))
+  def calc_overlap(self, walker, parameters, lattice):
+    nn_r = parameters[0]
+    nn_phi = parameters[1]
+    inputs = self.get_input(walker, lattice.shape)
+    outputs_r = jnp.array(self.nn_apply_r(nn_r, inputs + 0.j), dtype='complex64')
+    outputs_phi = jnp.array(self.nn_apply_phi(nn_phi, inputs + 0.j), dtype='complex64')
+    #overlap = jnp.exp(outputs_r[0]) * jnp.exp(1.j * jnp.sum(outputs_phi))
+    overlap = jnp.exp(outputs_r[0]) * lattice.get_marshall_sign(walker)
+    return overlap
+
+  @partial(jit, static_argnums=(0, 3))
+  def calc_overlap_gradient(self, walker, parameters, lattice):
+    value, grad_fun = vjp(self.calc_overlap, walker, parameters, lattice)
+    gradient = grad_fun(jnp.array([1. + 0.j], dtype='complex64')[0])[1]
+    #value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
+    gradient = self.serialize(gradient)
+    gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
+    return gradient / value
+
+  def __hash__(self):
+    return hash((self.nn_apply_r, self.nn_apply_phi, self.n_parameters, self.k))
 
 if __name__ == "__main__":
   import models, lattices

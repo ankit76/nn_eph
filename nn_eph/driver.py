@@ -11,6 +11,7 @@ from jax import lax, jit, custom_jvp, vmap, random, vjp, checkpoint, value_and_g
 import jax
 from mpi4py import MPI
 from nn_eph import stat_utils
+import pickle
 
 from functools import partial
 print = partial(print, flush=True)
@@ -93,7 +94,8 @@ def driver(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, step
         #update = momentum * update + step_size * ene_gradient
 
       new_parameters = wave.update_parameters(parameters, -update)
-
+      with open('parameters.bin', 'wb') as fh:
+        pickle.dump(new_parameters, fh)
       #new_parameters = [ update_parameters(parameters[0], -update), parameters[1] ]
       #new_parameters = parameters - update
       #new_parameters = new_parameters.at[0].set(0.)
@@ -200,6 +202,8 @@ def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, s
       update = update[1:] / update[0]
       update[np.abs(update) > 1.e+3 * 0.999**iteration] = 0.
       new_parameters = wave.update_parameters(parameters, update)
+      with open('parameters.bin', 'wb') as fh:
+        pickle.dump(new_parameters, fh)
 
       ene_gradient = 2 * total_lene_gradient - 2 * total_gradient * total_energy
       calc_time += time.time() - init
