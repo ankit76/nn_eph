@@ -239,6 +239,7 @@ class bm_ssh_1d():
   def local_energy_and_update(self, walker, parameters, wave, lattice, random_number):
     elec_pos = walker[0]
     phonon_occ = walker[1]
+    n_phonons = jnp.sum(phonon_occ)
     n_sites = lattice.shape[0]
 
     overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
@@ -258,8 +259,7 @@ class bm_ssh_1d():
       hop_sgn = 1 - 2 * site + (2 * site - 1 - (elec_pos[0] == 1) + (elec_pos[0] == 0)) * (n_sites == 2)
       # create phonon on old site
       new_phonon_occ = phonon_occ.at[elec_pos].add(1)
-      ratio_1_co = (phonon_occ[elec_pos] < self.max_n_phonons) * (1 - (n_sites == 2) * (site == 1)) * wave.calc_overlap(new_elec_pos, new_phonon_occ,
-      parameters, lattice) / overlap / (phonon_occ[elec_pos] + 1)**0.5
+      ratio_1_co = (n_phonons < self.max_n_phonons) * (1 - (n_sites == 2) * (site == 1)) * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap / (phonon_occ[elec_pos] + 1)**0.5
       ratios.append(ratio_1_co)
       energy -= hop_sgn * self.g * (phonon_occ[elec_pos] + 1)**0.5 * ratio_1_co
 
@@ -272,7 +272,7 @@ class bm_ssh_1d():
 
       # create phonon on new site
       new_phonon_occ = phonon_occ.at[new_elec_pos].add(1)
-      ratio_1_cn = (phonon_occ[new_elec_pos] < self.max_n_phonons) *  (1 - (n_sites == 2) * (site == 1)) * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap / (phonon_occ[new_elec_pos] + 1)**0.5
+      ratio_1_cn = (n_phonons < self.max_n_phonons) *  (1 - (n_sites == 2) * (site == 1)) * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap / (phonon_occ[new_elec_pos] + 1)**0.5
       ratios.append(ratio_1_cn)
       energy += hop_sgn * self.g * (phonon_occ[new_elec_pos] + 1)**0.5 * ratio_1_cn
 
