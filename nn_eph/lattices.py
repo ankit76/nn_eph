@@ -49,6 +49,9 @@ class one_dimensional_chain():
     self.sites = tuple([ (i,) for i in range(self.n_sites) ])
     self.bonds = tuple([ (i,) for i in range(self.n_sites) ]) if self.n_sites > 2 else tuple([ (0,) ])
 
+  def get_site_num(self, pos):
+    return pos[0]
+
   def make_polaron_basis(self, max_n_phonons):
     phonon_basis = make_phonon_basis(self.n_sites, max_n_phonons)
     polaron_basis = tuple([ (i,), phonon_state ] for i in range(self.n_sites) for phonon_state in phonon_basis)
@@ -80,6 +83,7 @@ class one_dimensional_chain():
     return cls(*aux_data)
 
 @dataclass
+@register_pytree_node_class
 class two_dimensional_grid():
   l_x: int
   l_y: int
@@ -119,8 +123,18 @@ class two_dimensional_grid():
     else:
       self.bonds = tuple([ (0, i // self.l_x, i % self.l_x) for i in range(self.l_x * self.l_y) ] + [ (1, i // self.l_x, i % self.l_x) for i in range(self.l_x * self.l_y) ])
 
+  def get_site_num(self, pos):
+    return pos[1] + self.l_x * pos[0]
+
+  def make_polaron_basis(self, max_n_phonons):
+    phonon_basis = make_phonon_basis(self.l_x * self.l_y, max_n_phonons)
+    polaron_basis = tuple([ site, phonon_state.reshape((self.l_y, self.l_x)) ] for site in self.sites for phonon_state in phonon_basis)
+    return polaron_basis
+
+  # does not work
   def get_symm_fac(self, pos, k):
-    return jnp.exp(2 * jnp.pi * 1.j * k[0] * pos[0] / self.n_sites) * jnp.exp(2 * jnp.pi * 1.j * k[1] * pos[1] / self.n_sites) if k is not None else 1.
+    return 1.
+    #return jnp.exp(2 * jnp.pi * 1.j * k[0] * pos[0] / self.n_sites) * jnp.exp(2 * jnp.pi * 1.j * k[1] * pos[1] / self.n_sites) if k is not None else 1.
 
   def get_distance(self, pos_1, pos_2):
     dist_y = jnp.min(jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.l_y - jnp.abs(pos_1[0] - pos_2[0])]))
@@ -159,8 +173,16 @@ class two_dimensional_grid():
   def __hash__(self):
     return hash((self.l_x, self.l_y, self.shape, self.shell_distances, self.bond_shell_distances, self.sites, self.bonds))
 
+  def tree_flatten(self):
+    return (), (self.l_x, self.l_y, self.shape, self.shell_distances, self.bond_shell_distances, self.sites, self.bonds)
+
+  @classmethod
+  def tree_unflatten(cls, aux_data, children):
+    return cls(*aux_data)
+
 
 @dataclass
+@register_pytree_node_class
 class three_dimensional_grid():
   l_x: int
   l_y: int
@@ -171,7 +193,7 @@ class three_dimensional_grid():
   bonds: Sequence = None
 
   def __post_init__(self):
-    self.shape = (self.l_x, self.l_y, self.l_z)
+    self.shape = (self.l_z, self.l_y, self.l_x)
     distances = [ ]
     for x in range(self.l_x//2+1):
       for y in range(self.l_y//2+1):
@@ -184,6 +206,14 @@ class three_dimensional_grid():
     self.sites = tuple([ (i // (self.l_x * self.l_y), (i % (self.l_x * self.l_y)) // self.l_x, (i % (self.l_x * self.l_y)) % self.l_x) for i in range(self.l_x * self.l_y * self.l_z) ])
     # TODO: fix bonds
     #self.bonds = tuple([ (i // self.l_x, i % self.l_x) for i in range(self.l_x * self.l_y) ])
+
+  def get_site_num(self, pos):
+    return pos[2] + self.l_x * pos[1] + (self.l_x * self.l_y) * pos[0]
+
+  # does not work
+  def get_symm_fac(self, pos, k):
+    return 1.
+    #return jnp.exp(2 * jnp.pi * 1.j * k[0] * pos[0] / self.n_sites) * jnp.exp(2 * jnp.pi * 1.j * k[1] * pos[1] / self.n_sites) if k is not None else 1.
 
   def get_distance(self, pos_1, pos_2):
     dist_z = jnp.min(jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.l_z - jnp.abs(pos_1[0] - pos_2[0])]))
@@ -208,7 +238,15 @@ class three_dimensional_grid():
   def __hash__(self):
     return hash((self.l_x, self.l_y, self.l_z, self.shape, self.shell_distances, self.sites, self.bonds))
 
+  def tree_flatten(self):
+    return (), (self.l_x, self.l_y, self.l_z, self.shape, self.shell_distances, self.sites, self.bonds)
+
+  @classmethod
+  def tree_unflatten(cls, aux_data, children):
+    return cls(*aux_data)
+
 if __name__ == "__main__":
-  lattice = one_dimensional_chain(2)
-  basis = lattice.make_polaron_basis(1)
-  print(basis)
+  lattice = three_dimensional_grid(3, 3, 3)
+  print(lattice.get_site_num(jnp.array((1,1,2))))
+  print(np.array(lattice.sites))
+
