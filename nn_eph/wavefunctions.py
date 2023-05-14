@@ -28,6 +28,15 @@ def get_input_k(elec_k, phonon_occ, lattice_shape):
   input_ar = jnp.stack([ elec_k_ar, *phonon_occ.reshape(-1, *lattice_shape) ], axis=-1)
   return input_ar
 
+@partial(jit, static_argnums=(2,))
+def get_input_n_k(elec_n_k, phonon_occ, lattice_shape):
+  elec_k_ar_0 = jnp.zeros(lattice_shape[1:])
+  elec_k_ar_0 = elec_k_ar_0.at[elec_n_k[1]].set(1)
+  elec_k_ar = jnp.zeros(lattice_shape)
+  elec_k_ar = elec_k_ar.at[elec_n_k[0]].set(elec_k_ar_0)
+  input_ar = jnp.stack([ *elec_k_ar.reshape(-1, *lattice_shape[1:]), *phonon_occ.reshape(-1, *lattice_shape[1:]) ], axis=-1)
+  return input_ar
+
 @partial(jit, static_argnums=(1,))
 def get_input_spins(walker, lattice_shape):
   return walker
@@ -513,7 +522,7 @@ class nn_complex():
   mask: Sequence = None
   k: Sequence = None
   get_input: Callable = get_input_r
-
+  
   def __post_init__(self):
     if self.mask is None:
       self.mask = jnp.array([1., 1.])
@@ -569,6 +578,78 @@ class nn_complex():
 
   def __hash__(self):
     return hash((self.nn_apply_r, self.nn_apply_phi, self.n_parameters, self.k))
+
+
+@dataclass
+class nn_complex_n():
+  nn_apply_r: Callable
+  nn_apply_phi: Callable
+  n_parameters: int
+  lattice_shape: Sequence
+  mask: Sequence = None
+  k: Sequence = None
+  get_input: Callable = get_input_n_k
+
+  def __post_init__(self):
+    if self.mask is None:
+      self.mask = jnp.array([1., 1.])
+
+  def serialize(self, parameters):
+    flat_tree = tree_util.tree_flatten(parameters[0])[0]
+    serialized_1 = jnp.reshape(flat_tree[0], (-1))
+    for params in flat_tree[1:]:
+      serialized_1 = jnp.concatenate((serialized_1, jnp.reshape(params, -1)))
+    flat_tree = tree_util.tree_flatten(parameters[1])[0]
+    serialized_2 = jnp.reshape(flat_tree[0], (-1))
+    for params in flat_tree[1:]:
+      serialized_2 = jnp.concatenate((serialized_2, jnp.reshape(params, -1)))
+    serialized = jnp.concatenate((serialized_1, serialized_2))
+    return serialized
+
+  # update is serialized, parameters are not
+  def update_parameters(self, parameters, update):
+    flat_tree, tree = tree_util.tree_flatten(parameters[0])
+    counter = 0
+    for i in range(len(flat_tree)):
+      flat_tree[i] += self.mask[0] * update[counter: counter +
+                                            flat_tree[i].size].reshape(flat_tree[i].shape)
+      counter += flat_tree[i].size
+    parameters[0] = tree_util.tree_unflatten(tree, flat_tree)
+
+    flat_tree, tree = tree_util.tree_flatten(parameters[1])
+    for i in range(len(flat_tree)):
+      flat_tree[i] += self.mask[1] * update[counter: counter +
+                                            flat_tree[i].size].reshape(flat_tree[i].shape)
+      counter += flat_tree[i].size
+    parameters[1] = tree_util.tree_unflatten(tree, flat_tree)
+    return parameters
+
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap(self, elec_pos, phonon_occ, parameters, lattice):
+    nn_r = parameters[0]
+    nn_phi = parameters[1]
+    inputs = self.get_input(elec_pos, phonon_occ, self.lattice_shape)
+    outputs_r = jnp.array(self.nn_apply_r(
+        nn_r, inputs + 0.j), dtype='complex64')
+    outputs_phi = jnp.array(self.nn_apply_phi(
+        nn_phi, inputs + 0.j), dtype='complex64')
+    overlap = jnp.exp(outputs_r[0]) * jnp.exp(1.j * jnp.sum(outputs_phi))
+
+    symm_fac = lattice.get_symm_fac(elec_pos, self.k)
+    return overlap * symm_fac
+
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+    value, grad_fun = vjp(self.calc_overlap, elec_pos,
+                          phonon_occ, parameters, lattice)
+    gradient = grad_fun(jnp.array([1. + 0.j], dtype='complex64')[0])[2]
+    #value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
+    gradient = self.serialize(gradient)
+    gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
+    return gradient / value
+
+  def __hash__(self):
+    return hash((self.nn_apply_r, self.nn_apply_phi, self.n_parameters, self.lattice_shape, self.k))
 
 @dataclass
 class nn_jastrow_2():
