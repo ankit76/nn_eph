@@ -225,15 +225,15 @@ class kq_ne():
     new_ind = jnp.searchsorted(
         cumulative_ratios, random_number * cumulative_ratios[-1])
 
-    jax.debug.print('\nwalker: {}', walker)
-    jax.debug.print('overlap: {}', overlap)
-    #jax.debug.print('overlap_gradient: {}', overlap_gradient)
-    jax.debug.print('weight: {}', weight)
-    jax.debug.print('ratios: {}', ratios)
-    jax.debug.print('energy: {}', energy)
-    jax.debug.print('random_number: {}', random_number)
-    jax.debug.print('new_ind: {}', new_ind)
-    jax.debug.print('qc: {}', qc)
+    #jax.debug.print('\nwalker: {}', walker)
+    #jax.debug.print('overlap: {}', overlap)
+    ##jax.debug.print('overlap_gradient: {}', overlap_gradient)
+    #jax.debug.print('weight: {}', weight)
+    #jax.debug.print('ratios: {}', ratios)
+    #jax.debug.print('energy: {}', energy)
+    #jax.debug.print('random_number: {}', random_number)
+    #jax.debug.print('new_ind: {}', new_ind)
+    #jax.debug.print('qc: {}', qc)
 
     #walker[0] = (new_ind//2,)
     #walker[1] = lax.cond(new_ind % 2 == 0, lambda x: x.at[qc[new_ind//2]].add(1), lambda x: x.at[qd[new_ind//2]].add(-1), walker[1])
@@ -249,6 +249,105 @@ class kq_ne():
 
   def __hash__(self):
     return hash((self.omega_q, self.e_n_k, self.g_mn_kq, self.max_n_phonons))
+
+@dataclass
+class kq_ne_np():
+  omega_nu_q: Sequence
+  e_n_k: Sequence
+  g_mn_nu_kq: Any
+  max_n_phonons: Any = jnp.inf
+
+  @partial(jit, static_argnums=(0, 3, 4))
+  def local_energy_and_update(self, walker, parameters, wave, lattice, random_number):
+    elec_n_k = walker[0]
+    elec_n = walker[0][0]
+    elec_k = walker[0][1]
+    phonon_occ = walker[1]
+    n_sites = jnp.array(lattice.shape)
+    n_e_bands = len(self.e_n_k)
+    n_p_bands = len(self.omega_nu_q)
+
+    overlap = wave.calc_overlap(elec_n_k, phonon_occ, parameters, lattice)
+    overlap_gradient = wave.calc_overlap_gradient(
+        elec_n_k, phonon_occ, parameters, lattice)
+    qp_weight = lax.cond(jnp.sum(phonon_occ) == 0,
+                         lambda x: 1., lambda x: 0., 0.)
+
+    # diagonal
+    energy = jnp.sum(jnp.array(self.omega_nu_q) * phonon_occ) + jnp.array(self.e_n_k)[elec_n][elec_k] + 0.j
+
+    ratios = jnp.zeros((n_e_bands, n_p_bands, 2 * len(lattice.sites),)) + 0.j
+    qc = None
+    qd = None
+
+    for m in range(n_e_bands):
+      for nu in range(n_p_bands):
+        # e_ph coupling
+        # carry = (energy, ratios)
+        def scanned_fun(carry, kp):
+          qc = tuple((jnp.array(elec_k) - kp) % n_sites)
+          qd = tuple((kp - jnp.array(elec_k)) % n_sites)
+    
+          kp_i = lattice.get_site_num(kp)
+          qc_i = lattice.get_site_num(qc)
+          qd_i = lattice.get_site_num(qd)
+    
+          new_elec_n_k = (m, tuple(kp))
+    
+          new_phonon_occ = phonon_occ.at[(nu, *qc)].add(1)
+          ratio = (jnp.sum(phonon_occ) < self.max_n_phonons) * wave.calc_overlap(new_elec_n_k,
+                                                                                 new_phonon_occ, parameters, lattice) / overlap /     (phonon_occ[qc] + 1)**0.5
+          carry[0] -= jnp.array(self.g_mn_nu_kq)[elec_n, m, nu, kp_i, qc_i] * \
+              (phonon_occ[qc] + 1)**0.5 * ratio
+          carry[1] = carry[1].at[m, nu, 2*kp_i].set(ratio)
+    
+          new_phonon_occ = phonon_occ.at[(nu, *qd)].add(-1)
+          new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
+          ratio = (phonon_occ[qd])**0.5 * wave.calc_overlap(new_elec_n_k,
+                                                            new_phonon_occ, parameters, lattice) / overlap
+          carry[0] -= jnp.array(self.g_mn_nu_kq)[elec_n, m, nu, kp_i, qc_i] * \
+              (phonon_occ[qd])**0.5 * ratio
+          carry[1] = carry[1].at[m, nu, 2*kp_i + 1].set(ratio)
+    
+          return carry, (qc, qd)
+    
+        [energy, ratios], (qc, qd) = lax.scan(
+            scanned_fun, [energy, ratios], jnp.array(lattice.sites))
+    
+        qc = jnp.stack(qc, axis=-1)
+        qd = jnp.stack(qd, axis=-1)
+
+    cumulative_ratios = jnp.cumsum(jnp.abs(ratios.reshape(-1)))
+    weight = 1 / cumulative_ratios[-1]
+    new_ind = jnp.searchsorted(
+        cumulative_ratios, random_number * cumulative_ratios[-1])
+
+    #jax.debug.print('\nwalker: {}', walker)
+    #jax.debug.print('overlap: {}', overlap)
+    ##jax.debug.print('overlap_gradient: {}', overlap_gradient)
+    #jax.debug.print('weight: {}', weight)
+    #jax.debug.print('ratios: {}', ratios)
+    #jax.debug.print('energy: {}', energy)
+    #jax.debug.print('random_number: {}', random_number)
+    #jax.debug.print('new_ind: {}', new_ind)
+    #jax.debug.print('qc: {}', qc)
+
+    #walker[0] = (new_ind//2,)
+    #walker[1] = lax.cond(new_ind % 2 == 0, lambda x: x.at[qc[new_ind//2]].add(1), lambda x: x.at[qd[new_ind//2]].add(-1), walker[1])
+    new_e_band = new_ind // (2 * len(lattice.sites) * n_p_bands)
+    p_band = (new_ind % (2 * len(lattice.sites) * n_p_bands)) // (2 * len(lattice.sites))
+    new_ind = new_ind % (2 * len(lattice.sites))
+    walker[0] = (new_e_band, tuple(jnp.array(lattice.sites)[new_ind//2]))
+    walker[1] = lax.cond(new_ind % 2 == 0, lambda x: x.at[(p_band, *tuple(
+        qc[new_ind//2]))].add(1), lambda x: x.at[(p_band, *tuple(qd[new_ind//2]))].add(-1), walker[1])
+    #walker[1] = lax.cond(new_ind % 2 == 0, lambda x: x.at[qc[0][new_ind//2]].add(1), lambda x: x.at[qd[0][new_ind//2]].add(-1), walker[1])
+    walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
+
+    return energy, qp_weight, overlap_gradient, weight, walker, overlap
+
+  def __hash__(self):
+    return hash((self.omega_q, self.e_n_k, self.g_mn_kq, self.max_n_phonons))
+
 
 @dataclass
 class kq_1d():
@@ -339,7 +438,7 @@ class ssh_1d():
     # bare
     new_elec_pos = ((elec_pos[0] + 1) % n_sites,)
     new_overlap = wave.calc_overlap(new_elec_pos, phonon_occ, parameters, lattice)
-    ratio_0 = lax.cond(n_sites > 1, lambda x: x / overlap, lambda x: 0., new_overlap)
+    ratio_0 = lax.cond(n_sites > 1, lambda x: x / overlap, lambda x: 0.j, new_overlap)
     energy -= ratio_0
 
     bond_pos = (elec_pos[0] * (1 - (n_sites == 2)),)
@@ -358,19 +457,19 @@ class ssh_1d():
     # bare
     new_elec_pos = ((elec_pos[0] - 1) % n_sites,)
     new_overlap = wave.calc_overlap(new_elec_pos, phonon_occ, parameters, lattice)
-    ratio_1 = lax.cond(n_sites > 2, lambda x: x / overlap, lambda x: 0., new_overlap)
+    ratio_1 = lax.cond(n_sites > 2, lambda x: x / overlap, lambda x: 0.j, new_overlap)
     energy -= ratio_1
 
     bond_pos = (new_elec_pos[0] * (1 - (n_sites==2)),)
     # create phonon
     new_phonon_occ = phonon_occ.at[bond_pos].add(1)
-    ratio_1_cp = (phonon_occ[bond_pos] < self.max_n_phonons) * lax.cond(n_sites > 2, lambda x: wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap / (phonon_occ[bond_pos] + 1)**0.5, lambda x: 0., 0.)
+    ratio_1_cp = (phonon_occ[bond_pos] < self.max_n_phonons) * lax.cond(n_sites > 2, lambda x: wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap / (phonon_occ[bond_pos] + 1)**0.5, lambda x: 0.j, 0.)
     energy -= self.g * (phonon_occ[bond_pos] + 1)**0.5 * ratio_1_cp
 
     # destroy phonon
     new_phonon_occ = phonon_occ.at[bond_pos].add(-1)
     new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
-    ratio_1_dp = lax.cond(n_sites > 2, lambda x: (phonon_occ[bond_pos])**0.5 * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap, lambda x: 0., 0.)
+    ratio_1_dp = lax.cond(n_sites > 2, lambda x: (phonon_occ[bond_pos])**0.5 * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap, lambda x: 0.j, 0.)
     energy -= self.g * (phonon_occ[bond_pos])**0.5 * ratio_1_dp
 
     cumulative_ratios = jnp.cumsum(jnp.abs(jnp.array([ ratio_0, ratio_0_cp, ratio_0_dp, ratio_1, ratio_1_cp, ratio_1_dp ])))
