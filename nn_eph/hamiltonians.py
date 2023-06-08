@@ -296,17 +296,17 @@ class kq_ne_np():
     
           new_phonon_occ = phonon_occ.at[(nu, *qc)].add(1)
           ratio = (jnp.sum(phonon_occ) < self.max_n_phonons) * wave.calc_overlap(new_elec_n_k,
-                                                                                 new_phonon_occ, parameters, lattice) / overlap /     (phonon_occ[qc] + 1)**0.5
+                                                                                 new_phonon_occ, parameters, lattice) / overlap /     (phonon_occ[(nu, *qc)] + 1)**0.5
           carry[0] -= jnp.array(self.g_mn_nu_kq)[elec_n, m, nu, kp_i, qc_i] * \
-              (phonon_occ[qc] + 1)**0.5 * ratio
+              (phonon_occ[(nu, *qc)] + 1)**0.5 * ratio
           carry[1] = carry[1].at[m, nu, 2*kp_i].set(ratio)
     
           new_phonon_occ = phonon_occ.at[(nu, *qd)].add(-1)
           new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
-          ratio = (phonon_occ[qd])**0.5 * wave.calc_overlap(new_elec_n_k,
+          ratio = (phonon_occ[(nu, *qd)])**0.5 * wave.calc_overlap(new_elec_n_k,
                                                             new_phonon_occ, parameters, lattice) / overlap
           carry[0] -= jnp.array(self.g_mn_nu_kq)[elec_n, m, nu, kp_i, qc_i] * \
-              (phonon_occ[qd])**0.5 * ratio
+              (phonon_occ[(nu, *qd)])**0.5 * ratio
           carry[1] = carry[1].at[m, nu, 2*kp_i + 1].set(ratio)
     
           return carry, (qc, qd)
@@ -346,7 +346,7 @@ class kq_ne_np():
     return energy, qp_weight, overlap_gradient, weight, walker, overlap
 
   def __hash__(self):
-    return hash((self.omega_q, self.e_n_k, self.g_mn_kq, self.max_n_phonons))
+    return hash((self.omega_nu_q, self.e_n_k, self.g_mn_nu_kq, self.max_n_phonons))
 
 
 @dataclass
