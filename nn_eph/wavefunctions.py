@@ -125,7 +125,7 @@ class sc_k_n():
     overlap = t[elec_pos[0], lattice.get_site_num(elec_pos[1])] * \
         jnp.prod(gamma**phonon_occ)
     return overlap
-  
+
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
     def scanned_fun(carry, x):
@@ -147,6 +147,7 @@ class sc_k_n():
     gradient = grad_fun(1. + 0.j)[2]
     gradient = self.serialize(gradient) / value
     gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
+    gradient = jnp.where(jnp.isinf(gradient), 0., gradient)
     return gradient
 
   @partial(jit, static_argnums=(0, 4))
@@ -154,8 +155,9 @@ class sc_k_n():
     value, gradient = value_and_grad(self.calc_overlap_map, argnums=2)(
         elec_pos, phonon_occ, parameters, lattice)
     gradient = self.serialize(gradient)
+    gradient = gradient / value
     gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
-    return gradient / value
+    return gradient
 
   def __hash__(self):
     return hash(self.n_parameters)
@@ -439,7 +441,7 @@ class bm_ssh_merrifield():
     #  [ overlap, _ ], _ = lax.scan(scanned_fun, [ overlap, x ], jnp.array(lattice.bonds))
     #  carry += overlap
     #  return carry, x
-    
+
     # carry : [ overlap, bond ]
     def scanned_fun(carry, x):
       dist, lr = lattice.get_bond_site_distance(carry[1], x)
@@ -507,7 +509,7 @@ class bm_ssh_merrifield():
 
   def save_params(self, parameters, filename='parameters.bin'):
     with open(filename, 'wb') as f:
-      pickle.dump(parameters, f)    
+      pickle.dump(parameters, f)
 
   def load_params(self, filename='parameters.bin'):
     parameters = None
@@ -652,7 +654,7 @@ class nn_complex():
   mask: Sequence = None
   k: Sequence = None
   get_input: Callable = get_input_r
-  
+
   def __post_init__(self):
     if self.mask is None:
       self.mask = jnp.array([1., 1.])
@@ -922,7 +924,7 @@ if __name__ == "__main__":
   n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters_r)) + sum(x.size for x in tree_util.tree_leaves(nn_parameters_phi))
   parameters = [ nn_parameters_r, nn_parameters_phi ]
   wave = nn_complex(model_r.apply, model_phi.apply, n_nn_parameters)
-  
+
   elec_pos = (0,)
   phonon_occ = jnp.array([ 2, 0, 1, 0 ])
   overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
@@ -945,7 +947,7 @@ if __name__ == "__main__":
   for i in range(len(flat_tree)):
     flat_tree[i] += update[counter: counter + flat_tree[i].size].reshape(flat_tree[i].shape)
     counter += flat_tree[i].size
-  parameters[1] = tree_util.tree_unflatten(tree, flat_tree)  
+  parameters[1] = tree_util.tree_unflatten(tree, flat_tree)
 
   overlap_1 = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
   print(f'overlap_1: {overlap_1}')
