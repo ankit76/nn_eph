@@ -161,6 +161,65 @@ class sc_k_n():
     return hash(self.n_parameters)
 
 @dataclass
+class sc_k_nep():
+  n_parameters: int
+  n_e_bands: int
+  n_p_bands: int
+
+  def serialize(self, parameters):
+    return parameters
+
+  def update_parameters(self, parameters, update):
+    parameters += update
+    return parameters
+
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap(self, elec_pos, phonon_occ, parameters, lattice):
+    nk = len(lattice.sites)
+    nk_np = nk * self.n_p_bands
+    gamma = (parameters[:nk_np] + 1.0j *
+             parameters[nk_np:2*nk_np]).reshape(self.n_p_bands, *lattice.shape)
+    t = (parameters[2*nk_np:2*nk_np+self.n_e_bands*nk] + 1.0j *
+         parameters[2*nk_np+self.n_e_bands*nk:]).reshape(self.n_e_bands, -1)
+    overlap = t[elec_pos[0], lattice.get_site_num(elec_pos[1])] * \
+        jnp.prod(gamma**phonon_occ)
+    return overlap
+  
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
+    def scanned_fun(carry, x):
+      dist_0 = lattice.get_distance(elec_pos[0], x)
+      dist_1 = lattice.get_distance(elec_pos[1], x)
+      carry *= (parameters[dist_0] + parameters[dist_1])**(phonon_occ[(*x,)])
+      return carry, x
+
+    overlap = 1.
+    overlap, _ = lax.scan(scanned_fun, overlap, jnp.array(lattice.sites))
+
+    return overlap
+
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+    parameters_c = parameters + 0.j
+    value, grad_fun = vjp(self.calc_overlap, elec_pos,
+                          phonon_occ, parameters_c, lattice)
+    gradient = grad_fun(1. + 0.j)[2]
+    gradient = self.serialize(gradient) / value
+    gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
+    return gradient
+
+  @partial(jit, static_argnums=(0, 4))
+  def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+    value, gradient = value_and_grad(self.calc_overlap_map, argnums=2)(
+        elec_pos, phonon_occ, parameters, lattice)
+    gradient = self.serialize(gradient)
+    gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
+    return gradient / value
+
+  def __hash__(self):
+    return hash(self.n_parameters)
+  
+@dataclass
 class merrifield_complex():
   n_parameters: int
   k: Sequence = None
