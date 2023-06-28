@@ -2,7 +2,7 @@ import os
 import numpy as np
 os.environ['JAX_PLATFORM_NAME'] = 'cpu'
 #os.environ['JAX_ENABLE_X64'] = 'True'
-from jax import random, lax, tree_util, grad, value_and_grad, jit, numpy as jnp
+from jax import random, lax, tree_util, grad, value_and_grad, jit, vjp, numpy as jnp
 from flax import linen as nn
 from typing import Sequence, Tuple, Callable, Any
 from dataclasses import dataclass
@@ -81,6 +81,74 @@ class continuous_time_sr():
 
     # energy, gradient, lene_gradient are weighted
     return weight, energy, gradient, lene_gradient, qp_weight, metric, energies, qp_weights, weights
+
+  def __hash__(self):
+    return hash((self.n_eql, self.n_samples))
+
+
+@dataclass
+class continuous_time_lr():
+  n_eql: int
+  n_samples: int
+
+  @partial(jit, static_argnums=(0, 2, 4, 5))
+  def sampling(self, walker, ham, parameters, wave, lattice, random_numbers):
+    _, _, gradient_0, _, _, overlap_0 = ham.local_energy_and_update(walker, parameters, wave, lattice, random_numbers[0])
+    gradient_0 *= jnp.real(overlap_0)
+    gradient_0 = jnp.real(gradient_0)
+
+    # carry : [ walker, weight, energy, grad, lene_grad, qp_weight ]
+    def scanned_fun(carry, x):
+      energy, qp_weight, gradient, weight, carry[0], _ = ham.local_energy_and_update(
+          carry[0], parameters, wave, lattice, random_numbers[x])
+      carry[1] += weight
+      carry[2] += weight * (jnp.real(energy) - carry[2]) / carry[1]
+      carry[3] = carry[3] + weight * (jnp.real(gradient) - carry[3]) / carry[1]
+      carry[4] = carry[4] + weight * \
+          (jnp.real(jnp.conjugate(energy) * gradient) - carry[4]) / carry[1]
+      carry[5] += weight * (jnp.real(qp_weight) - carry[5]) / carry[1]
+      return carry, (jnp.real(energy), qp_weight, weight)
+
+    weight = 0.
+    energy = 0.
+    gradient = jnp.zeros(wave.n_parameters)
+    lene_gradient = jnp.zeros(wave.n_parameters)
+    qp_weight = 0.
+    [walker, _, _, _, _, _], (_, _, _) = lax.scan(scanned_fun, [
+        walker, weight, energy, gradient, lene_gradient, qp_weight], jnp.arange(self.n_eql))
+
+    def _local_energy_and_update_wrapper(x, y, z): 
+      energy, qp_weight, gradient, weight, walker, overlap = ham.local_energy_and_update(
+          x, y, wave, lattice, z)
+      return energy, (qp_weight, gradient, weight, walker, overlap)
+
+    # carry : [ walker, weight, energy, grad, lene_grad, qp_weight, metric, h ]
+    def scanned_fun_g(carry, x):
+      energy, grad_fun, (qp_weight, gradient, weight, carry[0], _) = vjp(_local_energy_and_update_wrapper,
+          carry[0], parameters, random_numbers[x], has_aux=True)
+      ene_grad = wave.serialize(grad_fun(1.+0.j)[1])
+      carry[1] += weight
+      carry[2] += weight * (jnp.real(energy) - carry[2]) / carry[1]
+      carry[3] = carry[3] + weight * (jnp.real(gradient) - carry[3]) / carry[1]
+      carry[4] = carry[4] + weight * \
+          (jnp.real(jnp.conjugate(energy) * gradient) - carry[4]) / carry[1]
+      carry[5] += weight * (jnp.real(qp_weight) - carry[5]) / carry[1]
+      carry[6] += weight * (jnp.real(jnp.einsum('i,j->ij', jnp.conj(gradient), gradient)) - carry[6]) / carry[1]
+      carry[7] += weight * (jnp.real(jnp.einsum('i,j->ij', jnp.conj(gradient), ene_grad + energy * gradient)) - carry[7]) / carry[1]
+      return carry, (jnp.real(energy), qp_weight, weight)
+
+    weight = 0.
+    energy = 0.
+    gradient = jnp.zeros(wave.n_parameters)
+    lene_gradient = jnp.zeros(wave.n_parameters)
+    qp_weight = 0.
+    metric = jnp.zeros((wave.n_parameters, wave.n_parameters))
+    h = jnp.zeros((wave.n_parameters, wave.n_parameters))
+    [_, weight, energy, gradient, lene_gradient, qp_weight, metric, h], (energies, qp_weights,  weights) = lax.scan(
+        scanned_fun_g, [walker, weight, energy, gradient, lene_gradient, qp_weight, metric, h], jnp.arange(self.n_samples))
+
+    # energy, gradient, lene_gradient are weighted
+    return weight, energy, gradient, lene_gradient, qp_weight, metric, h, gradient_0, jnp.real(overlap_0), energies, qp_weights, weights
 
   def __hash__(self):
     return hash((self.n_eql, self.n_samples))
@@ -195,7 +263,8 @@ if __name__ == "__main__":
   n_sites = 2
   max_n_phonon = 2
   lattice = lattices.one_dimensional_chain(n_sites)
-  sampler = deterministic(max_n_phonon, lattice)
+  #sampler = deterministic(max_n_phonon, lattice)
+  sampler = continuous_time_lr(10, 10)
   n_samples = 10
   key = random.PRNGKey(0)
   random_numbers = random.uniform(key, shape=(n_samples,))

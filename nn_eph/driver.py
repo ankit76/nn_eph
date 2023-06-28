@@ -8,6 +8,8 @@ os.environ['JAX_PLATFORM_NAME'] = 'cpu'
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import lax, jit, custom_jvp, vmap, random, vjp, checkpoint, value_and_grad, tree_util
+from scipy.linalg import fractional_matrix_power
+from scipy import linalg as la
 import jax
 from mpi4py import MPI
 from nn_eph import stat_utils
@@ -252,22 +254,110 @@ def driver_sr(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, s
 
   return parameters
 
+
+def driver_lr(walker, ham, parameters, wave, lattice, sampler, seed=0):
+  key = random.PRNGKey(seed + rank)
+
+  calc_time = 0.
+  key, subkey = random.split(key)
+  random_numbers = random.uniform(subkey, shape=(sampler.n_samples,))
+  init = time.time()
+  weight, energy, gradient, lene_gradient, qp_weight, metric, h, gradient_0, overlap_0, energies, qp_weights, weights = sampler.sampling(
+      walker, ham, parameters, wave, lattice, random_numbers)
+  # average and print energies for the current step
+  weight = np.array([weight], dtype='float32')
+  energy = np.array([weight * energy], dtype='float32')
+  qp_weight = np.array([weight * qp_weight], dtype='float32')
+  metric = np.array(weight * metric, dtype='float32')
+  h = np.array(weight * h, dtype='float32')
+  #energy = np.array([ energy ])
+  total_weight = 0. * weight
+  total_energy = 0. * weight
+  total_qp_weight = 0. * weight
+  total_metric = 0. * metric
+  total_h = 0. * h
+  gradient = np.array(weight * gradient, dtype='float32')
+  lene_gradient = np.array(weight * lene_gradient, dtype='float32')
+  #gradient = np.array(gradient)
+  #lene_gradient = np.array(lene_gradient)
+  total_gradient = 0. * gradient
+  total_lene_gradient = 0. * lene_gradient
+  comm.barrier()
+  comm.Reduce([weight, MPI.FLOAT], [
+              total_weight, MPI.FLOAT], op=MPI.SUM, root=0)
+  comm.Reduce([energy, MPI.FLOAT], [
+              total_energy, MPI.FLOAT], op=MPI.SUM, root=0)
+  comm.Reduce([qp_weight, MPI.FLOAT], [
+              total_qp_weight, MPI.FLOAT], op=MPI.SUM, root=0)
+  comm.Reduce([metric, MPI.FLOAT], [
+              total_metric, MPI.FLOAT], op=MPI.SUM, root=0)
+  comm.Reduce([h, MPI.FLOAT], [
+              total_h, MPI.FLOAT], op=MPI.SUM, root=0)
+  comm.Reduce([gradient, MPI.FLOAT], [
+              total_gradient, MPI.FLOAT], op=MPI.SUM, root=0)
+  comm.Reduce([lene_gradient, MPI.FLOAT], [
+              total_lene_gradient, MPI.FLOAT], op=MPI.SUM, root=0)
+  comm.barrier()
+  new_parameters = None
+  if rank == 0:
+    total_energy /= total_weight
+    total_qp_weight /= total_weight
+    total_metric /= total_weight
+    total_h /= total_weight
+    total_gradient /= total_weight
+    total_lene_gradient /= total_weight
+    metric = np.zeros((wave.n_parameters + 1, wave.n_parameters + 1))
+    metric[0, 0] = 1.
+    metric[1:, 1:] = total_metric 
+    metric[0, 1:] = total_gradient
+    metric[1:, 0] = total_gradient
+    h = np.zeros((wave.n_parameters + 1, wave.n_parameters + 1))
+    h[0, 0] = total_energy
+    h[1:, 1:] = total_h
+    h[0, 1:] = total_lene_gradient
+    h[1:, 0] = total_lene_gradient
+    
+    filtered_vecs = [0]
+    for i in range(wave.n_parameters):
+      if np.linalg.norm(metric[i+1]) > 1.e-8 and abs(metric[i+1,i+1] - metric[0, i+1]) > 1.e-6:
+        filtered_vecs.append(i+1)
+    metric_1 = metric[np.ix_(filtered_vecs, filtered_vecs)]
+    metric_1 += np.diag(np.ones(len(filtered_vecs)) * 1.e-6)
+    h_1 = h[np.ix_(filtered_vecs, filtered_vecs)]
+
+    #lowdin = fractional_matrix_power(metric, -0.5)
+    np.savetxt('metric.dat', metric_1)
+    #np.savetxt('lowdin.dat', lowdin)
+    np.savetxt('h.dat', h_1)
+    e, v = la.eig(h_1, metric_1)
+    print(f'e: {e}')
+    em, _ = la.eig(metric_1)
+    print(f'em: {em}')
+    #h = lowdin @ h @ lowdin
+    #gradient = np.zeros(wave.n_parameters + 1)
+    #gradient[0] = overlap_0
+    #gradient[1:] = gradient_0
+    #gradient = lowdin @ gradient
+    #np.savetxt('ham.dat', h)
+    #np.savetxt('v.dat', gradient)
+  comm.barrier()
+
 if __name__ == "__main__":
   import lattices, models, wavefunctions, hamiltonians, samplers
-  l_x, l_y = 6, 6
+  l_x, l_y = 2, 2
   n_sites = l_x * l_y
   omega = 2.
   g = 2.
-  n_samples = 10000
+  n_samples = 100
   seed = 789941
-  n_eql = 100
+  n_eql = 10
   n_steps = 10000
   step_size = 0.02
-  sampler = samplers.continuous_time(n_eql, n_samples)
+  sampler = samplers.continuous_time_lr(n_eql, n_samples)
   ham = hamiltonians.holstein_2d(omega, g)
   lattice = lattices.two_dimensional_grid(l_x, l_y)
   gamma = jnp.array([ g / omega / n_sites for _ in range(len(lattice.shell_distances)) ])
-  model = models.MLP([100, 1])
+  model = models.MLP([10, 1])
   model_input = jnp.zeros(2*n_sites)
   nn_parameters = model.init(random.PRNGKey(0), model_input, mutable=True)
   n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters))
@@ -285,5 +375,6 @@ if __name__ == "__main__":
     print(f'# seed: {seed}')
     print(f'# number of parameters: {wave.n_parameters}\n#')
 
-  driver(walker, ham, parameters, wave, lattice, sampler, n_steps, step_size = 0.01)
+  # driver(walker, ham, parameters, wave, lattice, sampler, n_steps, step_size = 0.01)
+  driver_lr(walker, ham, parameters, wave, lattice, sampler)
 
