@@ -186,7 +186,22 @@ class sc_k_nep():
     overlap = t[elec_pos[0], lattice.get_site_num(elec_pos[1])] * \
         jnp.prod(gamma**phonon_occ)
     return overlap
-  
+
+  @partial(jit, static_argnums=(0, 6))
+  def calc_overlap_ratio(self, elec_pos_old, elec_pos_new, phonon_pos, phonon_change, parameters, lattice, overlap_old, phonon_occ_new):
+    nk = len(lattice.sites)
+    nk_np = nk * self.n_p_bands
+    nk_ne = nk * self.n_e_bands
+    gamma_ind_r = phonon_pos[0] * nk + lattice.get_site_num(phonon_pos[1])
+    gamma_ind_i = nk_np + phonon_pos[0] * nk + lattice.get_site_num(phonon_pos[1])
+    t_ind_old_r = 2*nk_np + elec_pos_old[0] * nk + lattice.get_site_num(elec_pos_old[1])
+    t_ind_old_i = 2*nk_np + nk_ne + elec_pos_old[0] * nk + lattice.get_site_num(elec_pos_old[1])
+    t_ind_new_r = 2*nk_np + elec_pos_new[0] * nk + lattice.get_site_num(elec_pos_new[1])
+    t_ind_new_i = 2*nk_np + nk_ne + elec_pos_new[0] * nk + lattice.get_site_num(elec_pos_new[1])
+    t_ratio = (parameters[t_ind_new_r] + 1.j * parameters[t_ind_new_i]) / (parameters[t_ind_old_r] + 1.j * parameters[t_ind_old_i])
+    gamma_ratio = (parameters[gamma_ind_r] + 1.j * parameters[gamma_ind_i])**phonon_change
+    return t_ratio * gamma_ratio
+
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
     def scanned_fun(carry, x):
@@ -208,6 +223,7 @@ class sc_k_nep():
     gradient = grad_fun(1. + 0.j)[2]
     gradient = self.serialize(gradient) / value
     gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
+    gradient = jnp.where(jnp.isinf(gradient), 0., gradient)
     return gradient
 
   @partial(jit, static_argnums=(0, 4))
@@ -220,7 +236,7 @@ class sc_k_nep():
 
   def __hash__(self):
     return hash(self.n_parameters)
-  
+
 @dataclass
 class merrifield_complex():
   n_parameters: int
@@ -621,6 +637,11 @@ class nn_jastrow():
 
     return jastrow * ref_overlap
 
+  @partial(jit, static_argnums=(0, 6))
+  def calc_overlap_ratio(self, elec_pos_old, elec_pos_new, phonon_pos, phonon_change, parameters, lattice, overlap_old, phonon_occ_new):
+    overlap_new = self.calc_overlap(elec_pos_new, phonon_occ_new, parameters, lattice)
+    return overlap_new / overlap_old
+
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
     value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
@@ -692,6 +713,11 @@ class nn_jastrow_complex():
     #symm_fac = lattice.get_symm_fac(elec_pos, self.k)
     return ref_overlap * overlap
 
+  @partial(jit, static_argnums=(0, 6))
+  def calc_overlap_ratio(self, elec_pos_old, elec_pos_new, phonon_pos, phonon_change, parameters, lattice, overlap_old, phonon_occ_new):
+    overlap_new = self.calc_overlap(elec_pos_new, phonon_occ_new, parameters, lattice)
+    return overlap_new / overlap_old
+
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
     value, grad_fun = vjp(self.calc_overlap, elec_pos,
@@ -757,6 +783,11 @@ class nn_complex():
 
     symm_fac = lattice.get_symm_fac(elec_pos, self.k)
     return overlap * symm_fac
+
+  @partial(jit, static_argnums=(0, 6))
+  def calc_overlap_ratio(self, elec_pos_old, elec_pos_new, phonon_pos, phonon_change, parameters, lattice, overlap_old, phonon_occ_new):
+    overlap_new = self.calc_overlap(elec_pos_new, phonon_occ_new, parameters, lattice)
+    return overlap_new / overlap_old
 
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
