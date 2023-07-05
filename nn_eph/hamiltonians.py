@@ -270,8 +270,7 @@ class kq_ne_np():
     overlap = wave.calc_overlap(elec_n_k, phonon_occ, parameters, lattice)
     overlap_gradient = wave.calc_overlap_gradient(
         elec_n_k, phonon_occ, parameters, lattice)
-    qp_weight = lax.cond(jnp.sum(phonon_occ) == 0,
-                         lambda x: 1., lambda x: 0., 0.)
+    qp_weight = lax.cond(jnp.sum(phonon_occ) == 0, lambda x: 1., lambda x: 0., 0.)
 
     # diagonal
     energy = jnp.sum(jnp.array(self.omega_nu_q) * phonon_occ) + jnp.array(self.e_n_k)[elec_n][elec_k] + 0.j
@@ -295,7 +294,7 @@ class kq_ne_np():
       phonon_change = 1
       #ratio = (jnp.sum(phonon_occ) < self.max_n_phonons) * wave.calc_overlap(new_elec_n_k,
       #                                                                       new_phonon_occparameters, lattice) / overlap /     (phonon_occ[(nu, *qc)] + 1)**0.5
-      ratio = (jnp.sum(phonon_occ) < self.max_n_phonons) * wave.calc_overlap_ratio(elec_n_k, new_elec_n_k, phonon_pos, phonon_change, parameters, lattice, overlap, new_phonon_occ) * (phonon_occ[(nu, *qc)] + 1)**0.5
+      ratio = (jnp.sum(phonon_occ) < self.max_n_phonons) * wave.calc_overlap_ratio(elec_n_k, new_elec_n_k, phonon_pos, phonon_change, parameters, lattice, overlap, new_phonon_occ) / (phonon_occ[(nu, *qc)] + 1)**0.5
       carry[0] -= jnp.array(self.g_mn_nu_kq)[elec_n, m, nu, kp_i, qc_i] * \
           (phonon_occ[(nu, *qc)] + 1)**0.5 * ratio
       carry[1] = carry[1].at[m, nu, 2*kp_i].set(ratio)
@@ -313,8 +312,8 @@ class kq_ne_np():
     def outer_scanned_fun(carry, m_nu):
       m = m_nu // n_p_bands
       nu = m_nu % n_p_bands
-      [energy, ratios, _, _], (qc, qd) = lax.scan(scanned_fun, [carry[0], carry[1], m, nu], jnp.array(lattice.sites))
-      return [energy, ratios, qc, qd], m_nu 
+      [carry[0], carry[1], _, _], (qc, qd) = lax.scan(scanned_fun, [carry[0], carry[1], m, nu], jnp.array(lattice.sites))
+      return [carry[0], carry[1], qc, qd], m_nu 
     
     ratios = jnp.zeros((n_e_bands, n_p_bands, 2 * len(lattice.sites),)) + 0.j
     qc = tuple([jnp.zeros(len(lattice.sites), dtype=jnp.int32) for _ in range(3)])
