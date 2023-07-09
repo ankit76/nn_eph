@@ -82,6 +82,7 @@ class one_dimensional_chain():
   shape: tuple = None
   sites: Sequence = None
   bonds: Sequence = None
+  coord_num: int = 2
 
   def __post_init__(self):
     self.shape = (self.n_sites,)
@@ -116,6 +117,9 @@ class one_dimensional_chain():
   def get_neighboring_bonds(self, pos):
     return jnp.array([ ((pos[0] - 1) % self.n_sites,), (pos[0],) ]) if self.n_sites > 2 else jnp.array([ (0,) ])
 
+  def get_nearest_neighbors(self, pos):
+    return jnp.array([ ((pos[0] - 1) % self.n_sites,), ((pos[0] + 1) % self.n_sites,) ]) if self.n_sites > 2 else jnp.array([ (1-pos[0],) ])
+
   def get_neighboring_sites(self, bond):
     return [ (bond[0] % self.n_sites,), ((bond[0] + 1) % self.n_sites,) ]
 
@@ -129,7 +133,7 @@ class one_dimensional_chain():
     return hash((self.n_sites, self.shape, self.sites, self.bonds))
 
   def tree_flatten(self):
-    return (), (self.n_sites, self.shape, self.sites, self.bonds)
+    return (), (self.n_sites, self.shape, self.sites, self.bonds, self.coord_num)
 
   @classmethod
   def tree_unflatten(cls, aux_data, children):
@@ -145,6 +149,7 @@ class two_dimensional_grid():
   bond_shell_distances: Sequence = None
   sites: Sequence = None
   bonds: Sequence = None
+  coord_num: int = 4
 
   def __post_init__(self):
     self.shape = (self.l_y, self.l_x)
@@ -237,12 +242,28 @@ class two_dimensional_grid():
     else:
       neighbors = [ (bond[1], bond[2]), (bond[1], (bond[2] + 1) % self.l_x) ]
     return jnp.array(neighbors)
+  
+  def get_nearest_neighbors(self, pos):
+    right = (pos[0], (pos[1] + 1) % self.l_x)
+    down = ((pos[0] + 1) % self.l_y, pos[1])
+    left = (pos[0], (pos[1] - 1) % self.l_x)
+    up = ((pos[0] - 1) % self.l_y, pos[1])
+    neighbors = []
+    if (self.l_x == 2) & (self.l_y == 2):
+      neighbors = [right, down]
+    elif self.l_x == 2:
+      neighbors = [right, down, up]
+    elif self.l_y == 2:
+      neighbors = [right, down, left]
+    else:
+      neighbors = [right, down, left, up]
+    return jnp.array(neighbors)
 
   def __hash__(self):
-    return hash((self.l_x, self.l_y, self.shape, self.shell_distances, self.bond_shell_distances, self.sites, self.bonds))
+    return hash((self.l_x, self.l_y, self.shape, self.shell_distances, self.bond_shell_distances, self.sites, self.bonds, self.coord_num))
 
   def tree_flatten(self):
-    return (), (self.l_x, self.l_y, self.shape, self.shell_distances, self.bond_shell_distances, self.sites, self.bonds)
+    return (), (self.l_x, self.l_y, self.shape, self.shell_distances, self.bond_shell_distances, self.sites, self.bonds, self.coord_num)
 
   @classmethod
   def tree_unflatten(cls, aux_data, children):
@@ -259,6 +280,7 @@ class three_dimensional_grid():
   shell_distances: Sequence = None
   sites: Sequence = None
   bonds: Sequence = None
+  coord_num: int = 6
 
   def __post_init__(self):
     self.shape = (self.l_z, self.l_y, self.l_x)
@@ -315,11 +337,22 @@ class three_dimensional_grid():
   def get_neighboring_bonds(self, pos):
     return jnp.array([ pos ])
 
+  # ignoring side length 1 and 2 special cases
+  def get_nearest_neighbors(self, pos):
+    right = (pos[0], (pos[1] + 1) % self.l_y, pos[2])
+    down = ((pos[0] + 1) % self.l_z, pos[1], pos[2])
+    left = (pos[0], (pos[1] - 1) % self.l_y, pos[2])
+    up = ((pos[0] - 1) % self.l_z, pos[1], pos[2])
+    front = (pos[0], pos[1], (pos[2] + 1) % self.l_x)
+    back = (pos[0], pos[1], (pos[2] - 1) % self.l_x)
+    neighbors = [right, down, left, up, front, back]
+    return jnp.array(neighbors)
+  
   def __hash__(self):
-    return hash((self.l_x, self.l_y, self.l_z, self.shape, self.shell_distances, self.sites, self.bonds))
+    return hash((self.l_x, self.l_y, self.l_z, self.shape, self.shell_distances, self.sites, self.bonds, self.coord_num))
 
   def tree_flatten(self):
-    return (), (self.l_x, self.l_y, self.l_z, self.shape, self.shell_distances, self.sites, self.bonds)
+    return (), (self.l_x, self.l_y, self.l_z, self.shape, self.shell_distances, self.sites, self.bonds, self.coord_num)
 
   @classmethod
   def tree_unflatten(cls, aux_data, children):

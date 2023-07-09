@@ -684,8 +684,6 @@ class holstein_2d():
     overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
     overlap_gradient = wave.calc_overlap_gradient(elec_pos, phonon_occ, parameters, lattice)
     qp_weight = lax.cond(jnp.sum(phonon_occ) == 0, lambda x: 1., lambda x: 0., 0.)
-    #jax.debug.print('\nwalker: {}', walker)
-    #jax.debug.print('ovlp: {}', overlap)
 
     # diagonal
     energy = self.omega * jnp.sum(phonon_occ)
@@ -722,13 +720,16 @@ class holstein_2d():
     energy -= self.g * (phonon_occ[elec_pos[0], elec_pos[1]])**0.5 * ratio_3
 
     cumulative_ratios = jnp.cumsum(jnp.abs(jnp.array([ ratio_0_x, ratio_1_x, ratio_0_y, ratio_1_y, ratio_2, ratio_3 ])))
-    #jax.debug.print('ratios: {}', jnp.array([ ratio_0_x, ratio_1_x, ratio_0_y, ratio_1_y, ratio_2, ratio_3  ]))
-    #jax.debug.print('energy: {}', energy)
     weight = 1 / cumulative_ratios[-1]
-    #jax.debug.print('weight: {}', weight)
     new_ind = jnp.searchsorted(cumulative_ratios, random_number * cumulative_ratios[-1])
-    #jax.debug.print('random_number: {}', random_number)
-    #jax.debug.print('new_ind: {}', new_ind)
+    
+    jax.debug.print('\nwalker: {}', walker)
+    jax.debug.print('ovlp: {}', overlap)
+    jax.debug.print('ratios: {}', jnp.array([ ratio_0_x, ratio_1_x, ratio_0_y, ratio_1_y, ratio_2, ratio_3  ]))
+    jax.debug.print('energy: {}', energy)
+    jax.debug.print('weight: {}', weight)
+    jax.debug.print('random_number: {}', random_number)
+    jax.debug.print('new_ind: {}', new_ind)
 
     walker[0] = jnp.array(walker[0])
     # x ->
@@ -1005,8 +1006,6 @@ class holstein_3d():
     overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
     overlap_gradient = wave.calc_overlap_gradient(elec_pos, phonon_occ, parameters, lattice)
     qp_weight = lax.cond(jnp.sum(phonon_occ) == 0, lambda x: 1., lambda x: 0., 0.)
-    #jax.debug.print('\nwalker: {}', walker)
-    #jax.debug.print('ovlp: {}', overlap)
 
     # diagonal
     energy = self.omega * jnp.sum(phonon_occ)
@@ -1053,11 +1052,14 @@ class holstein_3d():
     energy -= self.g * (phonon_occ[elec_pos[0], elec_pos[1], elec_pos[2]])**0.5 * ratio_3
 
     cumulative_ratios = jnp.cumsum(jnp.abs(jnp.array([ ratio_0_x, ratio_1_x, ratio_0_y, ratio_1_y, ratio_0_z, ratio_1_z, ratio_2, ratio_3 ])))
+    weight = 1 / cumulative_ratios[-1]
+    new_ind = jnp.searchsorted(cumulative_ratios, random_number * cumulative_ratios[-1])
+    
+    #jax.debug.print('\nwalker: {}', walker)
+    #jax.debug.print('ovlp: {}', overlap)
     #jax.debug.print('ratios: {}', jnp.array([ ratio_0_x, ratio_1_x, ratio_0_y, ratio_1_y, ratio_2, ratio_3  ]))
     #jax.debug.print('energy: {}', energy)
-    weight = 1 / cumulative_ratios[-1]
     #jax.debug.print('weight: {}', weight)
-    new_ind = jnp.searchsorted(cumulative_ratios, random_number * cumulative_ratios[-1])
     #jax.debug.print('random_number: {}', random_number)
     #jax.debug.print('new_ind: {}', new_ind)
 
@@ -1086,32 +1088,115 @@ class holstein_3d():
   def __hash__(self):
     return hash((self.omega, self.g))
 
+@dataclass
+class holstein():
+  omega: float
+  g: float
+  max_n_phonons: any = jnp.inf
+
+  @partial(jit, static_argnums=(0, 3, 4))
+  def local_energy_and_update(self, walker, parameters, wave, lattice, random_number):
+    elec_pos = walker[0]
+    phonon_occ = walker[1]
+    lattice_shape = phonon_occ.shape
+
+    overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
+    overlap_gradient = wave.calc_overlap_gradient(
+        elec_pos, phonon_occ, parameters, lattice)
+    qp_weight = lax.cond(jnp.sum(phonon_occ) == 0, lambda x: 1., lambda x: 0., 0.)
+
+    # diagonal
+    energy = self.omega * jnp.sum(phonon_occ)
+
+    # electron hops
+    nearest_neighbors = lattice.get_nearest_neighbors(elec_pos)
+    # carry: [ energy ]
+    def scanned_fun(carry, x):
+      new_overlap = wave.calc_overlap(x, phonon_occ, parameters, lattice)
+      ratio = new_overlap / overlap
+      carry[0] -= ratio
+      return carry, ratio
+    
+    [ energy ], hop_ratios = lax.scan(scanned_fun, [ energy ], lattice.get_nearest_neighbors(elec_pos))
+
+    # e_ph coupling
+    e_ph_ratios = jnp.zeros((2,))
+    new_phonon_occ = phonon_occ.at[elec_pos].add(1)
+    ratio_0 = (phonon_occ[elec_pos] < self.max_n_phonons) * wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice) / overlap / (phonon_occ[elec_pos] + 1)**0.5
+    energy -= self.g * (phonon_occ[elec_pos] + 1)**0.5 * ratio_0
+    e_ph_ratios = e_ph_ratios.at[0].set(ratio_0)
+
+    new_phonon_occ = phonon_occ.at[elec_pos].add(-1)
+    new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
+    ratio_1 = (phonon_occ[elec_pos])**0.5 * wave.calc_overlap(elec_pos, new_phonon_occ,
+                          parameters, lattice) / overlap
+    energy -= self.g * (phonon_occ[elec_pos])**0.5 * ratio_1
+    e_ph_ratios = e_ph_ratios.at[1].set(ratio_1)
+
+    cumulative_ratios = jnp.cumsum(jnp.abs(jnp.concatenate((hop_ratios, e_ph_ratios))))
+    weight = 1 / cumulative_ratios[-1]
+    new_ind = jnp.searchsorted(cumulative_ratios, random_number * cumulative_ratios[-1])
+    
+    #jax.debug.print('walker: {}', walker)
+    #jax.debug.print('overlap: {}', overlap)
+    #jax.debug.print('ratios: {}', jnp.concatenate((hop_ratios, e_ph_ratios)))
+    #jax.debug.print('energy: {}', energy)
+    #jax.debug.print('weight: {}', weight)
+    #jax.debug.print('random_number: {}', random_number)
+    #jax.debug.print('new_ind: {}', new_ind)
+
+    # update
+    walker[0] = jnp.array(walker[0])
+    walker[0] = lax.cond(new_ind < lattice.coord_num, lambda w: tuple(nearest_neighbors[new_ind]), lambda w: elec_pos, 0)
+    walker[1] = lax.cond(new_ind >= lattice.coord_num, lambda w: w.at[elec_pos].add(1 - 2*((new_ind - lattice.coord_num))), lambda w: w, walker[1])
+    
+    walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
+    energy = jnp.where(jnp.isnan(energy), 0., energy)
+    energy = jnp.where(jnp.isinf(energy), 0., energy)
+    weight = jnp.where(jnp.isnan(weight), 0., weight)
+    weight = jnp.where(jnp.isinf(weight), 0., weight)
+    return energy, qp_weight, overlap_gradient, weight, walker, overlap
+
+  def __hash__(self):
+    return hash((self.omega, self.g, self.max_n_phonons))
+
 if __name__ == "__main__":
   import lattices, wavefunctions, models
-  n_sites = 4
-  n_bands = 2
-  lattice = lattices.one_dimensional_chain(n_sites)
+  l_x, l_y, l_z = 3, 3, 3
+  n_sites = l_x * l_y * l_z
+  #n_bands = 2
+  lattice = lattices.three_dimensional_grid(l_x, l_y, l_z)
 
-  model_r = models.MLP([5, 1])
-  model_phi = models.MLP([5, 1])
-  model_input = jnp.zeros((1 + n_bands)*n_sites)
-  nn_parameters_r = model_r.init(random.PRNGKey(0), model_input, mutable=True)
-  nn_parameters_phi = model_phi.init(random.PRNGKey(1), model_input, mutable=True)
-  n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters_r)) + sum(x.size for x in tree_util.tree_leaves(nn_parameters_phi))
-  parameters = [ nn_parameters_r, nn_parameters_phi ]
-  lattice_shape = (n_bands, *lattice.shape)
-  wave = wavefunctions.nn_complex_n(model_r.apply, model_phi.apply, n_nn_parameters, lattice_shape)
-
-  walker = [ (0, (0,)), jnp.zeros(lattice.shape) ]
-
-  omega_q = tuple(1. for _ in range(n_sites))
-  e_n_k = (tuple(-2. * np.cos(2. * np.pi * k / n_sites) for k in range(n_sites)),
-           tuple(-2. * np.cos(2. * np.pi * k / n_sites) for k in range(n_sites)))
-  g_mn_kq = ((tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites)),
-              tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites))),
-             (tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites)),
-              tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites))))
-
-  ham = kq_ne(omega_q, e_n_k, g_mn_kq)
+  np.random.seed(0)
+  parameters = jnp.array(np.random.rand(len(lattice.shell_distances)))
+  wave = wavefunctions.merrifield(parameters.size)
+  phonon_occ = jnp.array([[[ np.random.randint(2) for _ in range(l_x) ] for _ in range(l_y) ] for _ in range(l_z)])
+  walker = [ (0, 0, 0), phonon_occ ]  
   random_number = 0.9
+  ham = holstein_3d(1., 1.)
   energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker, parameters, wave, lattice, random_number)
+  print(energy)
+
+  #model_r = models.MLP([5, 1])
+  #model_phi = models.MLP([5, 1])
+  #model_input = jnp.zeros((1 + n_bands)*n_sites)
+  #nn_parameters_r = model_r.init(random.PRNGKey(0), model_input, mutable=True)
+  #nn_parameters_phi = model_phi.init(random.PRNGKey(1), model_input, mutable=True)
+  #n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters_r)) + sum(x.size for x in tree_util.tree_leaves(nn_parameters_phi))
+  #parameters = [ nn_parameters_r, nn_parameters_phi ]
+  #lattice_shape = (n_bands, *lattice.shape)
+  #wave = wavefunctions.nn_complex_n(model_r.apply, model_phi.apply, n_nn_parameters, lattice_shape)
+#
+  #walker = [ (0, (0,)), jnp.zeros(lattice.shape) ]
+#
+  #omega_q = tuple(1. for _ in range(n_sites))
+  #e_n_k = (tuple(-2. * np.cos(2. * np.pi * k / n_sites) for k in range(n_sites)),
+  #         tuple(-2. * np.cos(2. * np.pi * k / n_sites) for k in range(n_sites)))
+  #g_mn_kq = ((tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites)),
+  #            tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites))),
+  #           (tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites)),
+  #            tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites))))
+#
+  #ham = kq_ne(omega_q, e_n_k, g_mn_kq)
+  #random_number = 0.9
+  #energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker, parameters, wave, lattice, random_number)
