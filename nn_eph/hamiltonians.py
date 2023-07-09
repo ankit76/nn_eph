@@ -448,7 +448,7 @@ class ssh_1d():
     # bare
     new_elec_pos = ((elec_pos[0] + 1) % n_sites,)
     new_overlap = wave.calc_overlap(new_elec_pos, phonon_occ, parameters, lattice)
-    ratio_0 = lax.cond(n_sites > 1, lambda x: x / overlap, lambda x: 0.j, new_overlap)
+    ratio_0 = lax.cond(n_sites > 1, lambda x: x / overlap, lambda x: 0. * x, new_overlap)
     energy -= ratio_0
 
     bond_pos = (elec_pos[0] * (1 - (n_sites == 2)),)
@@ -467,19 +467,19 @@ class ssh_1d():
     # bare
     new_elec_pos = ((elec_pos[0] - 1) % n_sites,)
     new_overlap = wave.calc_overlap(new_elec_pos, phonon_occ, parameters, lattice)
-    ratio_1 = lax.cond(n_sites > 2, lambda x: x / overlap, lambda x: 0.j, new_overlap)
+    ratio_1 = lax.cond(n_sites > 2, lambda x: x / overlap, lambda x: 0. * x, new_overlap)
     energy -= ratio_1
 
     bond_pos = (new_elec_pos[0] * (1 - (n_sites==2)),)
     # create phonon
     new_phonon_occ = phonon_occ.at[bond_pos].add(1)
-    ratio_1_cp = (phonon_occ[bond_pos] < self.max_n_phonons) * lax.cond(n_sites > 2, lambda x: wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap / (phonon_occ[bond_pos] + 1)**0.5, lambda x: 0.j, 0.)
+    ratio_1_cp = (phonon_occ[bond_pos] < self.max_n_phonons) * lax.cond(n_sites > 2, lambda x: wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap / (phonon_occ[bond_pos] + 1)**0.5, lambda x: 0. * overlap, 0.)
     energy -= self.g * (phonon_occ[bond_pos] + 1)**0.5 * ratio_1_cp
 
     # destroy phonon
     new_phonon_occ = phonon_occ.at[bond_pos].add(-1)
     new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
-    ratio_1_dp = lax.cond(n_sites > 2, lambda x: (phonon_occ[bond_pos])**0.5 * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap, lambda x: 0.j, 0.)
+    ratio_1_dp = lax.cond(n_sites > 2, lambda x: (phonon_occ[bond_pos])**0.5 * wave.calc_overlap(new_elec_pos, new_phonon_occ, parameters, lattice) / overlap, lambda x: 0. * overlap, 0.)
     energy -= self.g * (phonon_occ[bond_pos])**0.5 * ratio_1_dp
 
     cumulative_ratios = jnp.cumsum(jnp.abs(jnp.array([ ratio_0, ratio_0_cp, ratio_0_dp, ratio_1, ratio_1_cp, ratio_1_dp ])))
