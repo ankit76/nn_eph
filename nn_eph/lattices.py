@@ -82,6 +82,7 @@ class one_dimensional_chain():
   shape: tuple = None
   sites: Sequence = None
   bonds: Sequence = None
+  hop_signs: Sequence = ( 1., -1. )
   coord_num: int = 2
 
   def __post_init__(self):
@@ -117,6 +118,7 @@ class one_dimensional_chain():
   def get_neighboring_bonds(self, pos):
     return jnp.array([ ((pos[0] - 1) % self.n_sites,), (pos[0],) ]) if self.n_sites > 2 else jnp.array([ (0,) ])
 
+  # ordering is used in the ssh model
   def get_nearest_neighbors(self, pos):
     return jnp.array([ ((pos[0] - 1) % self.n_sites,), ((pos[0] + 1) % self.n_sites,) ]) if self.n_sites > 2 else jnp.array([ (1-pos[0],) ])
 
@@ -149,10 +151,13 @@ class two_dimensional_grid():
   bond_shell_distances: Sequence = None
   sites: Sequence = None
   bonds: Sequence = None
+  n_sites: int = None
+  hop_signs: Sequence = (-1., -1., 1., 1.)
   coord_num: int = 4
 
   def __post_init__(self):
     self.shape = (self.l_y, self.l_x)
+    self.n_sites = self.l_x * self.l_y
     distances = [ ]
     for x in range(self.l_x//2+1):
       for y in range(self.l_y//2+1):
@@ -228,11 +233,11 @@ class two_dimensional_grid():
     if (self.l_x == 2) & (self.l_y == 2):
       neighbors = [ (0, 0, pos[1]), (1, pos[0], 0) ]
     elif self.l_x == 2:
-      neighbors = [ down, up, right  if pos[1] == 0 else left ]
+      neighbors = [ right if pos[1] == 0 else left, down, up ]
     elif self.l_y == 2:
-      neighbors = [ left, right, down  if pos[0] == 0 else up ]
+      neighbors = [ right, down  if pos[0] == 0 else up, left ]
     else:
-      neighbors = [ down, right, up, left ]
+      neighbors = [ right, down, left, up ]
     return jnp.array(neighbors)
 
   def get_neighboring_sites(self, bond):
@@ -258,7 +263,7 @@ class two_dimensional_grid():
     else:
       neighbors = [right, down, left, up]
     return jnp.array(neighbors)
-
+     
   def __hash__(self):
     return hash((self.l_x, self.l_y, self.shape, self.shell_distances, self.bond_shell_distances, self.sites, self.bonds, self.coord_num))
 
@@ -280,10 +285,12 @@ class three_dimensional_grid():
   shell_distances: Sequence = None
   sites: Sequence = None
   bonds: Sequence = None
+  n_sites: int = None
   coord_num: int = 6
 
   def __post_init__(self):
     self.shape = (self.l_z, self.l_y, self.l_x)
+    self.n_sites = self.l_x * self.l_y * self.l_z
     distances = [ ]
     for x in range(self.l_x//2+1):
       for y in range(self.l_y//2+1):

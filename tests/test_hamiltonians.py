@@ -73,7 +73,7 @@ phonon_occ = jnp.array([[[ np.random.randint(2) for _ in range(l_x) ] for _ in r
 walker_3d = [ (0, 0, 0), phonon_occ ]
 
 def test_holstein_1d():
-  ham = hamiltonians.holstein_1d(1., 1.)
+  ham = hamiltonians.holstein(1., 1.)
   random_number = 0.5
   energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_1d, parameters_1d, wave_h_1d, lattice_1d, random_number)
   assert np.allclose(energy, -32.4191830535864)
@@ -93,7 +93,7 @@ def test_holstein_1d_2():
   assert walker[0][0][0] + walker[0][1][0] + sum(walker[1]) == 5
 
 def test_long_range_1d():
-  ham = hamiltonians.long_range_1d(1., 1., 1.)
+  ham = hamiltonians.long_range(1., 1., 1.)
   random_number = 0.5
   energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_1d, parameters_1d, wave_h_1d, lattice_1d, random_number)
   assert np.allclose(energy, -32.47901747694962)
@@ -113,7 +113,7 @@ def test_long_range_1d_2():
   assert walker[0][0][0] + walker[0][1][0] + sum(walker[1]) == 5
 
 def test_ssh_1d():
-  ham = hamiltonians.ssh_1d(1., 1.)
+  ham = hamiltonians.bond_ssh(1., 1.)
   random_number = 0.5
   energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_1d, parameters_1d, wave_s_1d, lattice_1d, random_number)
   assert np.allclose(energy, -30.099586948140804)
@@ -123,8 +123,8 @@ def test_ssh_1d():
   assert walker[0][0] + sum(walker[1]) == 3
 
 def test_bm_ssh_1d():
-  ham = hamiltonians.bm_ssh_1d(1., 1.)
-  random_number = 0.5
+  ham = hamiltonians.ssh(1., 1.)
+  random_number = 1.
   walker_1d = [(0,), jnp.array([ 2, 0, 0, 0 ])]
   energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_1d, gamma_1d, reference_bm_s_1d, lattice_1d, random_number)
   assert np.allclose(energy, -27.78881273208553)
@@ -134,7 +134,7 @@ def test_bm_ssh_1d():
   assert walker[0][0] + sum(walker[1]) == 4
 
 def test_holstein_2d():
-  ham = hamiltonians.holstein_2d(1., 1.)
+  ham = hamiltonians.holstein(1., 1.)
   random_number = 0.5
   energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_2d, parameters_2d, wave_2d, lattice_2d, random_number)
   assert np.allclose(energy, -4.604745245749261)
@@ -143,7 +143,7 @@ def test_holstein_2d():
   assert np.allclose(weight, 0.10411520289333714)
 
 def test_ssh_2d():
-  ham = hamiltonians.ssh_2d(1., 1.)
+  ham = hamiltonians.bond_ssh(1., 1.)
   random_number = 0.5
   energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_s_2d, parameters_s_2d, wave_s_2d, lattice_2d, random_number)
   assert np.allclose(energy, -49.956671130407884)
@@ -161,7 +161,7 @@ def test_ssh_2d_2():
   assert np.allclose(weight, 0.038376743628477976)
 
 def test_long_range_2d():
-  ham = hamiltonians.long_range_2d(1., 1., 1.)
+  ham = hamiltonians.long_range(1., 1., 1.)
   random_number = 0.5
   energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_2d, parameters_2d, wave_2d, lattice_2d, random_number)
   assert np.allclose(energy, -7.768236289696451)
@@ -179,7 +179,7 @@ def test_long_range_2d_2():
   assert np.allclose(weight, 0.034140078029097465)
 
 def test_holstein_3d():
-  ham = hamiltonians.holstein_3d(1., 1.)
+  ham = hamiltonians.holstein(1., 1.)
   random_number = 0.5
   energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_3d, parameters_3d, wave_3d, lattice_3d, random_number)
   assert np.allclose(energy, -4.785211306275675)
@@ -188,16 +188,16 @@ def test_holstein_3d():
   assert np.allclose(weight, 0.06343059987847004)
 
 if __name__ == "__main__":
-  test_holstein_1d()
-  test_holstein_1d_2()
-  test_long_range_1d()
-  test_long_range_1d_2()
-  test_ssh_1d()
+  #test_holstein_1d()
+  #test_holstein_1d_2()
+  #test_long_range_1d()
+  #test_long_range_1d_2()
+  #test_ssh_1d()
   test_bm_ssh_1d()
-  test_holstein_2d()
-  test_ssh_2d()
-  test_ssh_2d_2()
-  test_long_range_2d()
-  test_long_range_2d_2()
-  test_holstein_3d()
+  #test_holstein_2d()
+  #test_ssh_2d()
+  #test_ssh_2d_2()
+  #test_long_range_2d()
+  #test_long_range_2d_2()
+  #test_holstein_3d()
 
