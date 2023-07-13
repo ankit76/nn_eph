@@ -19,6 +19,16 @@ def get_input_r(elec_pos, phonon_occ, lattice_shape):
       input_ar = input_ar.at[phonon_type].set(input_ar[phonon_type].take(elec_pos[ax] + jnp.arange(lattice_shape[ax]), axis=ax, mode='wrap'))
   return jnp.stack([*input_ar], axis=-1)
 
+# TODO: needs to be changed for 2 sites
+@partial(jit, static_argnums=(2,))
+def get_input_r_1(elec_pos, phonon_occ, lattice_shape):
+  elec_ar = jnp.zeros(lattice_shape)
+  elec_ar = elec_ar.at[tuple(0*jnp.array(elec_pos))].set(1)
+  input_ar = phonon_occ.reshape(-1, *lattice_shape)
+  for ax in range(len(lattice_shape)):
+    for phonon_type in range(phonon_occ.shape[0]):
+      input_ar = input_ar.at[phonon_type].set(input_ar[phonon_type].take(elec_pos[ax] + jnp.arange(lattice_shape[ax]), axis=ax, mode='wrap'))
+  return jnp.stack([elec_ar, *input_ar], axis=-1)
 
 # TODO: needs to be changed for 2 sites
 @partial(jit, static_argnums=(2,))
@@ -796,6 +806,7 @@ class nn_complex():
     #value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
     gradient = self.serialize(gradient)
     gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
+    gradient = jnp.where(jnp.isinf(gradient), 0., gradient)
     return gradient / value
 
   def __hash__(self):
