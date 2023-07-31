@@ -111,8 +111,8 @@ def driver(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, step
   total_energies = 0. * weights
 
   comm.barrier()
-  comm.Reduce([weights, MPI.FLOAT], [total_weights, MPI.FLOAT], op=MPI.SUM, root=0)
-  comm.Reduce([energies, MPI.FLOAT], [total_energies, MPI.FLOAT], op=MPI.SUM, root=0)
+  comm.Reduce([weights, MPI.DOUBLE], [total_weights, MPI.DOUBLE], op=MPI.SUM, root=0)
+  comm.Reduce([energies, MPI.DOUBLE], [total_energies, MPI.DOUBLE], op=MPI.SUM, root=0)
   comm.barrier()
   if rank == 0:
     total_energies /= total_weights
