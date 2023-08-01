@@ -105,8 +105,8 @@ def driver(walker, ham, parameters, wave, lattice, sampler, n_steps = 1000, step
     parameters = comm.bcast(new_parameters, root=0)
     comm.barrier()
 
-  weights = np.array(weights)
-  energies = np.array(weights * energies)
+  weights = np.array(weights, dtype='float64')
+  energies = np.array(weights * energies, dtype='float64')
   total_weights = 0. * weights
   total_energies = 0. * weights
 
