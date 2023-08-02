@@ -285,7 +285,7 @@ class long_range():
                          lambda x: 1., lambda x: 0., 0.)
 
     # diagonal
-    energy = self.omega * jnp.sum(phonon_occ)
+    energy = self.omega * jnp.sum(phonon_occ) + 0.j
 
     # electron hops
     nearest_neighbors = lattice.get_nearest_neighbors(elec_pos)
@@ -302,7 +302,7 @@ class long_range():
         scanned_fun, [energy], lattice.get_nearest_neighbors(elec_pos))
 
     # e_ph coupling
-    e_ph_ratios = jnp.zeros(2*lattice.n_sites)
+    e_ph_ratios = jnp.zeros(2*lattice.n_sites) + 0.j
     # carry: [ energy, ratios, counter ]
     def scanned_fun(carry, x):
       pos = tuple(x)
@@ -379,7 +379,7 @@ class bond_ssh():
                          lambda x: 1., lambda x: 0., 0.)
 
     # diagonal
-    energy = self.omega * jnp.sum(phonon_occ)
+    energy = self.omega * jnp.sum(phonon_occ) + 0.j
 
     # electron hops bare and dressed
     nearest_neighbors = lattice.get_nearest_neighbors(elec_pos)
@@ -458,7 +458,7 @@ class ssh():
                          lambda x: 1., lambda x: 0., 0.)
 
     # diagonal
-    energy = self.omega * jnp.sum(phonon_occ)
+    energy = self.omega * jnp.sum(phonon_occ) + 0.j
 
     # electron hops bare and dressed
     nearest_neighbors = lattice.get_nearest_neighbors(elec_pos)
