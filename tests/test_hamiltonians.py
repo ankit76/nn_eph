@@ -152,7 +152,7 @@ def test_ssh_2d():
   assert np.allclose(weight, 0.015636617084037848)
 
 def test_ssh_2d_2():
-  ham = hamiltonians_2.ssh_2d(1., 1., 1.)
+  ham = hamiltonians_2.bond_ssh_2d(1., 1., 1.)
   random_number = 0.5
   energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker_s_2d_2, gamma_s_2d, reference_s_2d, lattice_2d, random_number)
   assert np.allclose(energy, -12.836294885966295)

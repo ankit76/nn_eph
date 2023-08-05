@@ -88,12 +88,12 @@ class one_dimensional_chain():
   def __post_init__(self):
     self.shape = (self.n_sites,)
     self.sites = tuple([ (i,) for i in range(self.n_sites) ])
-    self.bonds = tuple([ (i,) for i in range(self.n_sites) ]) if self.n_sites > 2 else tuple([ (0,) ])
+    self.bonds = tuple([ (0,i,) for i in range(self.n_sites) ]) if self.n_sites > 2 else tuple([ (0,0) ])
 
-  def get_bond_site_distance(self, bond, site):
+  def get_bond_mode_distance(self, bond, mode):
     neigboring_sites = self.get_neighboring_sites(bond)
-    dist_1 = self.get_distance(neigboring_sites[0], site)
-    dist_2 = self.get_distance(neigboring_sites[1], site)
+    dist_1 = self.get_distance(neigboring_sites[0], mode[1:])
+    dist_2 = self.get_distance(neigboring_sites[1], mode[1:])
     lr = (dist_1 < dist_2) * 1. - (dist_1 > dist_2) * 1.
     return jnp.min(jnp.array([dist_1, dist_2])), lr
   
@@ -116,20 +116,26 @@ class one_dimensional_chain():
     return jnp.exp(2 * jnp.pi * 1.j * k[0] * pos[0] / self.n_sites) if k is not None else 1.
 
   def get_neighboring_bonds(self, pos):
-    return jnp.array([ ((pos[0] - 1) % self.n_sites,), (pos[0],) ]) if self.n_sites > 2 else jnp.array([ (0,) ])
+    return jnp.array([ (0, (pos[0] - 1) % self.n_sites,), (0, pos[0],) ]) if self.n_sites > 2 else jnp.array([ (0, 0,) ])
 
   # ordering is used in the ssh model
   def get_nearest_neighbors(self, pos):
     return jnp.array([ ((pos[0] - 1) % self.n_sites,), ((pos[0] + 1) % self.n_sites,) ]) if self.n_sites > 2 else jnp.array([ (1-pos[0],) ])
 
+  def get_nearest_neighbor_modes(self, pos):
+    return jnp.array([ (0, (pos[0] - 1) % self.n_sites,), (0, (pos[0] + 1) % self.n_sites,) ]) if self.n_sites > 2 else jnp.array([ (0, 1-pos[0],) ])
+
   def get_neighboring_sites(self, bond):
-    return [ (bond[0] % self.n_sites,), ((bond[0] + 1) % self.n_sites,) ]
+    return [ (bond[1] % self.n_sites,), ((bond[1] + 1) % self.n_sites,) ]
+  
+  def get_neighboring_modes(self, bond):
+    return [ (bond[0], bond[1] % self.n_sites,), (bond[0], (bond[1] + 1) % self.n_sites,) ]
 
   def get_distance(self, pos_1, pos_2):
     return jnp.min(jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.n_sites - jnp.abs(pos_1[0] - pos_2[0])]))
 
   def get_bond_distance(self, pos_1, pos_2):
-    return jnp.min(jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.n_sites - jnp.abs(pos_1[0] - pos_2[0])]))
+    return jnp.min(jnp.array([jnp.abs(pos_1[1] - pos_2[1]), self.n_sites - jnp.abs(pos_1[1] - pos_2[1])]))
 
   def __hash__(self):
     return hash((self.n_sites, self.shape, self.sites, self.bonds))
@@ -206,13 +212,15 @@ class two_dimensional_grid():
     return 1.
     #return jnp.exp(2 * jnp.pi * 1.j * k[0] * pos[0] / self.n_sites) * jnp.exp(2 * jnp.pi * 1.j * k[1] * pos[1] / self.n_sites) if k is not None else 1.
 
+  @partial(jit, static_argnums=(0,))
   def get_distance(self, pos_1, pos_2):
     dist_y = jnp.min(jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.l_y - jnp.abs(pos_1[0] - pos_2[0])]))
     dist_x = jnp.min(jnp.array([jnp.abs(pos_1[1] - pos_2[1]), self.l_x - jnp.abs(pos_1[1] - pos_2[1])]))
     dist = dist_x**2 + dist_y**2
     shell_number = jnp.searchsorted(jnp.array(self.shell_distances), dist)
     return shell_number
-
+  
+  @partial(jit, static_argnums=(0,))
   def get_bond_distance(self, pos_1, pos_2):
     shifted_pos_1 = 2 * jnp.array(pos_1[1:])
     shifted_pos_1 = shifted_pos_1.at[pos_1[0]].add(1)
@@ -240,12 +248,19 @@ class two_dimensional_grid():
       neighbors = [ right, down, left, up ]
     return jnp.array(neighbors)
 
+  @partial(jit, static_argnums=(0,))
   def get_neighboring_sites(self, bond):
-    neighbors = [ ]
-    if bond[0] == 0:
-      neighbors = [ (bond[1], bond[2]), ((bond[1] + 1) % self.l_y, bond[2]) ]
-    else:
-      neighbors = [ (bond[1], bond[2]), (bond[1], (bond[2] + 1) % self.l_x) ]
+    #neighbors = [ ]
+    #if bond[0] == 0:
+    #  neighbors = [ (bond[1], bond[2]), ((bond[1] + 1) % self.l_y, bond[2]) ]
+    #else:
+    #  neighbors = [ (bond[1], bond[2]), (bond[1], (bond[2] + 1) % self.l_x) ]
+    neighbors = lax.cond(bond[0] == 0, lambda x: [ (bond[1], bond[2]), ((bond[1] + 1) % self.l_y, bond[2]) ], lambda x: [ (bond[1], bond[2]), (bond[1], (bond[2] + 1) % self.l_x) ], 0)
+    return jnp.array(neighbors)
+  
+  @partial(jit, static_argnums=(0,))
+  def get_neighboring_modes(self, bond):
+    neighbors = lax.cond(bond[0] == 0, lambda x: [ (0, bond[1], bond[2]), (0, (bond[1] + 1) % self.l_y, bond[2]) ], lambda x: [ (1, bond[1], bond[2]), (1, bond[1], (bond[2] + 1) % self.l_x) ], 0)
     return jnp.array(neighbors)
   
   def get_nearest_neighbors(self, pos):
@@ -263,7 +278,37 @@ class two_dimensional_grid():
     else:
       neighbors = [right, down, left, up]
     return jnp.array(neighbors)
-     
+  
+  # used in the ssh model
+  @partial(jit, static_argnums=(0,))
+  def get_nearest_neighbor_modes(self, pos):
+    right = (1, pos[0], (pos[1] + 1) % self.l_x)
+    down = (0, (pos[0] + 1) % self.l_y, pos[1])
+    left = (1, pos[0], (pos[1] - 1) % self.l_x)
+    up = (0, (pos[0] - 1) % self.l_y, pos[1])
+    neighbors = [right, down, left, up]
+    return jnp.array(neighbors)
+  
+  # used in the ssh model
+  #@partial(jit, static_argnums=(0,))
+  def get_bond_mode_distance(self, bond, mode):
+    neighboring_sites = self.get_neighboring_sites(bond)
+    dist_1 = self.get_distance(neighboring_sites[0], mode[1:])
+    dist_2 = self.get_distance(neighboring_sites[1], mode[1:])
+    # evaluate both parallel and perpendicular cases
+    # parallel
+    dist_bond_1 = jnp.min(jnp.array(
+        [jnp.abs(neighboring_sites[0][mode[0]] - mode[1:][mode[0]]), jnp.array(self.shape)[mode[0]] - jnp.abs(neighboring_sites[0][mode[0]] - mode[1:][mode[0]])]))
+    dist_bond_2 = jnp.min(jnp.array(
+        [jnp.abs(neighboring_sites[1][mode[0]] - mode[1:][mode[0]]), jnp.array(self.shape)[mode[0]] - jnp.abs(neighboring_sites[1][mode[0]] - mode[1:][mode[0]])]))
+    lr_bond = (dist_bond_1 < dist_bond_2) * 1. - (dist_bond_1 > dist_bond_2) * 1.
+    # perpendicular
+    dist_site_1 = (neighboring_sites[1 - (dist_1 < dist_2)][mode[0]] - mode[1:][mode[0]]) % jnp.array(self.shape)[mode[0]]
+    dist_site_2 = (mode[1:][mode[0]] - neighboring_sites[1 - (dist_1 < dist_2)][mode[0]]) % jnp.array(self.shape)[mode[0]]
+    lr_site = (dist_site_1 < dist_site_2) * 1. - (dist_site_1 > dist_site_2) * 1.
+    lr = lr_bond * (bond[0] == mode[0]) + lr_site * (bond[0] != mode[0])  
+    return jnp.min(jnp.array([dist_1, dist_2])), lr
+
   def __hash__(self):
     return hash((self.l_x, self.l_y, self.shape, self.shell_distances, self.bond_shell_distances, self.sites, self.bonds, self.coord_num))
 
@@ -366,11 +411,15 @@ class three_dimensional_grid():
     return cls(*aux_data)
 
 if __name__ == "__main__":
-  lattice = one_dimensional_chain(4)
-  bond = (1,)
-  site = (0,)
+  #lattice = one_dimensional_chain(4)
+  #bond = (1,)
+  #site = (0,)
   #print(lattice.get_bond_site_distance(bond, site))
-  lattice = three_dimensional_grid(2, 2, 2)
-  basis = lattice.make_polaron_basis_n(2, 1)
+  #lattice = three_dimensional_grid(2, 2, 2)
+  #basis = lattice.make_polaron_basis_n(2, 1)
   #basis = make_phonon_basis(30, 1)
-  print(basis)
+  #print(basis)
+  lattice = two_dimensional_grid(3, 3)
+  mode = jnp.array((1, 0, 0))
+  bond = jnp.array((1, 0, 1))
+  print(lattice.get_bond_mode_distance(bond, mode))
