@@ -589,13 +589,17 @@ class bm_ssh_merrifield():
       shift = lax.cond(phonon_occ[(*x,)] == 0, lambda w: 1., lambda w: parameters[dist], 0)
       carry[0] *= (lr * shift)**(phonon_occ[(*x,)])
       return carry, x
+    
+    # carry : [ overlap ]
+    def outer_scanned_fun(carry, x):
+      overlap_bond = 1.
+      [ overlap, _ ], _ = lax.scan(scanned_fun, [ overlap_bond, x ], jnp.array(lattice.bonds))
+      carry += overlap
+      return carry, x
 
     overlap = 0.
     neighboring_bonds = lattice.get_neighboring_bonds(elec_pos)
-    for bond in neighboring_bonds:
-      overlap_bond = 1.
-      [ overlap_bond, _ ], _ = lax.scan(scanned_fun, [ overlap_bond, bond ], jnp.array(lattice.bonds))
-      overlap += overlap_bond
+    overlap, _ = lax.scan(outer_scanned_fun, overlap, neighboring_bonds)
 
     return overlap
 
