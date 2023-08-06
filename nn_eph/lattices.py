@@ -290,7 +290,7 @@ class two_dimensional_grid():
     return jnp.array(neighbors)
   
   # used in the ssh model
-  #@partial(jit, static_argnums=(0,))
+  @partial(jit, static_argnums=(0,))
   def get_bond_mode_distance(self, bond, mode):
     neighboring_sites = self.get_neighboring_sites(bond)
     dist_1 = self.get_distance(neighboring_sites[0], mode[1:])

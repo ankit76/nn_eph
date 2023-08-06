@@ -495,26 +495,15 @@ class bm_ssh_lf():
 
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap(self, elec_pos, phonon_occ, parameters, lattice):
-    ## carry: [ overlap, bond_position ]
-    #def scanned_fun(carry, x):
-    #  dist = lattice.get_site_bond_distance(x, carry[1])
-    #  carry[0] *= (parameters[dist])**(phonon_occ[(*x,)])
-    #  return carry, x
-    #
-    ## carry: [ overlap ]
-    #def outer_scanned_fun(carry, x):
-    #  overlap = 1.
-    #  [ overlap, _ ], _ = lax.scan(scanned_fun, [ overlap, x ], jnp.array(lattice.bonds))
-    #  carry += overlap
-    #  return carry, x
+    # carry: overlap
+    def scanned_fun(carry, x):
+      phonon_sites = lattice.get_neighboring_modes(x)
+      carry += ((parameters[0])**(phonon_occ[(*phonon_sites[0],)])) * ((-parameters[0])**(phonon_occ[(*phonon_sites[1],)])) * (jnp.sum(phonon_occ) == (phonon_occ[(*phonon_sites[0],)] + phonon_occ[(*phonon_sites[1],)]))      
+      return carry, x
 
     overlap = 0.
     neighboring_bonds = lattice.get_neighboring_bonds(elec_pos)
-    for bond in neighboring_bonds:
-      phonon_sites = lattice.get_neighboring_modes(bond)
-      overlap += ((parameters[0])**(phonon_occ[(*phonon_sites[0],)])) * ((-parameters[0])**(phonon_occ[(*phonon_sites[1],)])) * (jnp.sum(phonon_occ) == (phonon_occ[(*phonon_sites[0],)] + phonon_occ[(*phonon_sites[1],)]))
-
-    #overlap, _ = lax.scan(outer_scanned_fun, overlap, neighboring_bonds)
+    overlap, _ = lax.scan(scanned_fun, overlap, neighboring_bonds)
 
     return overlap
 
@@ -524,29 +513,42 @@ class bm_ssh_lf():
     neighboring_bonds_0 = lattice.get_neighboring_bonds(elec_pos[0])
     neighboring_bonds_1 = lattice.get_neighboring_bonds(elec_pos[1])
 
-    # carry: [ overlap, bond_position_0, bond_position_1 ]
-    def scanned_fun(carry, x):
-      dist_0 = lattice.get_bond_distance(carry[1], x)
-      dist_1 = lattice.get_bond_distance(carry[2], x)
-      carry[0] *= (parameters[dist_0] + parameters[dist_1])**(phonon_occ[(*x,)])
-      return carry, x
-
     # carry: [ overlap, bond_position_0 ]
-    def outer_scanned_fun(carry, x):
-      overlap = 1.
-      [ overlap, _, _ ], _ = lax.scan(scanned_fun, [ overlap, carry[1], x ], jnp.array(lattice.bonds))
-      carry[0] += overlap
+    # x: bond_position_1
+    def scanned_fun(carry, x):
+      phonon_sites_0 = lattice.get_neighboring_modes(carry[1])
+      phonon_sites_1 = lattice.get_neighboring_modes(x)
+      shift_l_0 = lax.cond(phonon_occ[(*phonon_sites_0[0],)] == 0, lambda w: 1., lambda w: parameters[0], 0)
+      shift_r_0 = lax.cond(phonon_occ[(*phonon_sites_0[1],)] == 0, lambda w: 1., lambda w: -parameters[0], 0)
+      shift_l_1 = lax.cond(phonon_occ[(*phonon_sites_1[0],)] == 0, lambda w: 1., lambda w: parameters[0], 0)
+      shift_r_1 = lax.cond(phonon_occ[(*phonon_sites_1[1],)] == 0, lambda w: 1., lambda w: -parameters[0], 0)
+      term_0 = jnp.product(phonon_sites_0[0] == phonon_sites_1[0]) * jnp.product(phonon_sites_0[1] == phonon_sites_1[1]) * (shift_l_0 + shift_l_1)**(phonon_occ[(*phonon_sites_0[0],)]) * (shift_r_0 + shift_r_1)**(phonon_occ[(*phonon_sites_0[1],)])
+      constraint_0 = jnp.sum(phonon_occ) == (phonon_occ[(*phonon_sites_0[0],)] + phonon_occ[(*phonon_sites_0[1],)])
+      term_1 = jnp.product(phonon_sites_0[0] == phonon_sites_1[1]) * jnp.product(phonon_sites_0[1] == phonon_sites_1[0]) * (shift_l_0 + shift_r_1)**(phonon_occ[(*phonon_sites_0[0],)]) * (shift_r_0 + shift_l_1)**(phonon_occ[(*phonon_sites_0[1],)])
+      constraint_1 = jnp.sum(phonon_occ) == (phonon_occ[(*phonon_sites_0[0],)] + phonon_occ[(*phonon_sites_0[1],)])
+      term_2 = jnp.product(phonon_sites_0[0] == phonon_sites_1[0]) * jnp.product(phonon_sites_0[1] != phonon_sites_1[1]) * (shift_l_0 + shift_l_1)**(phonon_occ[(*phonon_sites_0[0],)]) * shift_r_0**(phonon_occ[(*phonon_sites_0[1],)]) * shift_r_1**(phonon_occ[(*phonon_sites_1[1],)])
+      constraint_2 = jnp.sum(phonon_occ) == (phonon_occ[(*phonon_sites_0[0],)] + phonon_occ[(*phonon_sites_0[1],)] + phonon_occ[(*phonon_sites_1[1],)])
+      term_3 = jnp.product(phonon_sites_0[0] == phonon_sites_1[1]) * jnp.product(phonon_sites_0[1] != phonon_sites_1[0]) * (shift_l_0 + shift_r_1)**(phonon_occ[(*phonon_sites_0[0],)]) * shift_r_0**(phonon_occ[(*phonon_sites_0[1],)]) * shift_l_1**(phonon_occ[(*phonon_sites_1[0],)])
+      constraint_3 = jnp.sum(phonon_occ) == (phonon_occ[(*phonon_sites_0[0],)] + phonon_occ[(*phonon_sites_0[1],)] + phonon_occ[(*phonon_sites_1[0],)])
+      term_4 = jnp.product(phonon_sites_0[0] != phonon_sites_1[0]) * jnp.product(phonon_sites_0[1] == phonon_sites_1[1]) * shift_l_0**(phonon_occ[(*phonon_sites_0[0],)]) * (shift_r_0 + shift_r_1)**(phonon_occ[(*phonon_sites_0[1],)]) * (shift_l_1 + shift_l_0)**(phonon_occ[(*phonon_sites_1[0],)])
+      constraint_4 = jnp.sum(phonon_occ) == (phonon_occ[(*phonon_sites_0[0],)] + phonon_occ[(*phonon_sites_0[1],)] + phonon_occ[(*phonon_sites_1[0],)])
+      term_5 = jnp.product(phonon_sites_0[0] != phonon_sites_1[1]) * jnp.product(phonon_sites_0[1] == phonon_sites_1[0]) * shift_l_0**(phonon_occ[(*phonon_sites_0[0],)]) * (shift_r_0 + shift_l_1)**(phonon_occ[(*phonon_sites_0[1],)]) * (shift_l_1 + shift_r_0)**(phonon_occ[(*phonon_sites_1[1],)])
+      constraint_5 = jnp.sum(phonon_occ) == (phonon_occ[(*phonon_sites_0[0],)] + phonon_occ[(*phonon_sites_0[1],)] + phonon_occ[(*phonon_sites_1[1],)])
+      term_6 = jnp.product(phonon_sites_0[0] != phonon_sites_1[0]) * jnp.product(phonon_sites_0[1] != phonon_sites_1[1]) * shift_l_0**(phonon_occ[(*phonon_sites_0[0],)]) * shift_r_0**(phonon_occ[(*phonon_sites_0[1],)]) * shift_l_1**(phonon_occ[(*phonon_sites_1[0],)]) * shift_r_1**(phonon_occ[(*phonon_sites_1[1],)])
+      constraint_6 = jnp.sum(phonon_occ) == (phonon_occ[(*phonon_sites_0[0],)] + phonon_occ[(*phonon_sites_0[1],)] + phonon_occ[(*phonon_sites_1[0],)] + phonon_occ[(*phonon_sites_1[1],)])
+      carry += term_0 * constraint_0 + term_1 * constraint_1 + term_2 * constraint_2 + term_3 * constraint_3 + term_4 * constraint_4 + term_5 * constraint_5 + term_6 * constraint_6
+
       return carry, x
 
-    # carry: [ overlap ]
-    def outer_outer_scanned_fun(carry, x):
-      overlap = 0.
-      [ overlap, _ ], _ = lax.scan(outer_scanned_fun, [ overlap, x ], neighboring_bonds_1)
-      carry += overlap
+    # carry: overlap 
+    def outer_scanned_fun(carry, x):
+      overlap_0 = 0.
+      [ overlap_0, _ ], _ = lax.scan(scanned_fun, [ overlap_0, x ], neighboring_bonds_1)
+      carry += overlap_0
       return carry, x
 
     overlap = 0.
-    overlap, _ = lax.scan(outer_outer_scanned_fun, overlap, neighboring_bonds_0)
+    overlap, _ = lax.scan(outer_scanned_fun, overlap, neighboring_bonds_0)
 
     return overlap
 
@@ -561,9 +563,10 @@ class bm_ssh_lf():
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
     value, gradient = value_and_grad(self.calc_overlap_map, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
-    gradient = self.serialize(gradient)
+    gradient = self.serialize(gradient) / value
     gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
-    return gradient / value
+    gradient = jnp.where(jnp.isinf(gradient), 0., gradient)
+    return gradient
 
   def __hash__(self):
     return hash(self.n_parameters)
@@ -603,17 +606,18 @@ class bm_ssh_merrifield():
 
     return overlap
 
-  # needs to be fixed
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
     neighboring_bonds_0 = lattice.get_neighboring_bonds(elec_pos[0])
     neighboring_bonds_1 = lattice.get_neighboring_bonds(elec_pos[1])
-
+  
     # carry: [ overlap, bond_position_0, bond_position_1 ]
     def scanned_fun(carry, x):
-      dist_0 = lattice.get_bond_distance(carry[1], x)
-      dist_1 = lattice.get_bond_distance(carry[2], x)
-      carry[0] *= (parameters[dist_0] + parameters[dist_1])**(phonon_occ[(*x,)])
+      dist_0, lr_0 = lattice.get_bond_mode_distance(carry[1], x)
+      dist_1, lr_1 = lattice.get_bond_mode_distance(carry[2], x)
+      # this deals with the strange 0^0 grad nan issue
+      shift = lax.cond(phonon_occ[(*x,)] == 0, lambda w: 1., lambda w: lr_0 * parameters[dist_0] + lr_1 * parameters[dist_1], 0)
+      carry[0] *= (shift)**(phonon_occ[(*x,)])
       return carry, x
 
     # carry: [ overlap, bond_position_0 ]
@@ -646,9 +650,10 @@ class bm_ssh_merrifield():
   @partial(jit, static_argnums=(0, 4))
   def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
     value, gradient = value_and_grad(self.calc_overlap_map, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
-    gradient = self.serialize(gradient)
+    gradient = self.serialize(gradient) / value
     gradient = jnp.where(jnp.isnan(gradient), 0., gradient)
-    return gradient / value
+    gradient = jnp.where(jnp.isinf(gradient), 0., gradient)
+    return gradient
 
   def save_params(self, parameters, filename='parameters.bin'):
     with open(filename, 'wb') as f:
