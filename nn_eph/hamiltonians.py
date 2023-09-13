@@ -409,7 +409,7 @@ class bond_ssh():
     [energy], ratios = lax.scan(
         scanned_fun, [energy], jnp.arange(lattice.coord_num))
 
-    ratios = jnp.concatenate(ratios)
+    ratios = jnp.stack(ratios, axis=-1)
     cumulative_ratios = jnp.cumsum(jnp.abs(ratios))
     weight = 1 / cumulative_ratios[-1]
     new_ind = jnp.searchsorted(
@@ -417,7 +417,7 @@ class bond_ssh():
 
     #jax.debug.print('walker: {}', walker)
     #jax.debug.print('overlap: {}', overlap)
-    #jax.debug.print('ratios: {}', jnp.concatenate((hop_ratios, e_ph_ratios)))
+    #jax.debug.print('ratios: {}', ratios)
     #jax.debug.print('energy: {}', energy)
     #jax.debug.print('weight: {}', weight)
     #jax.debug.print('random_number: {}', random_number)
@@ -429,7 +429,7 @@ class bond_ssh():
     bond = tuple(neighboring_bonds[new_ind // 3])
     walker[0] = new_elec_pos
     walker[1] = lax.cond(new_ind % 3 > 0, lambda w: w.at[bond].add(phonon_change), lambda w: w, phonon_occ).reshape(walker[1].shape)
-
+    
     walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
     energy = jnp.where(jnp.isnan(energy), 0., energy)
     energy = jnp.where(jnp.isinf(energy), 0., energy)

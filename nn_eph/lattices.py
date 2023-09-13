@@ -207,10 +207,8 @@ class two_dimensional_grid():
     walker_a = walker[::2, ::2]
     return (-1)**jnp.sum(jnp.where(walker_a > 0, 1, 0))
 
-  # does not work
   def get_symm_fac(self, pos, k):
-    return 1.
-    #return jnp.exp(2 * jnp.pi * 1.j * k[0] * pos[0] / self.n_sites) * jnp.exp(2 * jnp.pi * 1.j * k[1] * pos[1] / self.n_sites) if k is not None else 1.
+    return jnp.exp(2 * jnp.pi * 1.j * k[0] * pos[0] / self.l_x) * jnp.exp(2 * jnp.pi * 1.j * k[1] * pos[1] / self.l_y) if k is not None else 1.
 
   @partial(jit, static_argnums=(0,))
   def get_distance(self, pos_1, pos_2):
