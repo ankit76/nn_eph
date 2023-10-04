@@ -39,13 +39,15 @@ class CNN(nn.Module):
   kernel_sizes: Sequence
   activation: Any = nn.relu
   kernel_init: Any = jax.nn.initializers.lecun_normal()
+  bias_init: Any = jax.nn.initializers.zeros
   param_dtype: Any = jnp.float32
 
   @nn.compact
   def __call__(self, x):
     x = x.reshape(1, *x.shape)
     for layer in range(len(self.channels)):
-      x = nn.Conv(features=self.channels[layer], kernel_size=self.kernel_sizes[layer], padding='CIRCULAR', param_dtype=self.param_dtype, kernel_init=self.kernel_init)(x)
+      x = nn.Conv(features=self.channels[layer], kernel_size=self.kernel_sizes[layer], padding='CIRCULAR', param_dtype=self.param_dtype, kernel_init=self.kernel_init, bias_init=self.bias_init)(x)
+      #jax.debug.print('x: {}', x)
       x = self.activation(x)
     return jnp.array([jnp.sum(x)])
 
