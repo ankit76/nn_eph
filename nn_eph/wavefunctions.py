@@ -100,7 +100,7 @@ class merrifield:
 
         def scanned_fun(carry, x):
             dist = lattice.get_distance(elec_pos, x)
-            carry *= (gamma[dist]) ** (phonon_occ[(*x,)])
+            carry *= (gamma[dist]) ** (1.0 * phonon_occ[(*x,)])
             return carry, x
 
         overlap = 1.0
@@ -113,7 +113,9 @@ class merrifield:
         def scanned_fun(carry, x):
             dist_0 = lattice.get_distance(elec_pos[0], x)
             dist_1 = lattice.get_distance(elec_pos[1], x)
-            carry *= (parameters[dist_0] + parameters[dist_1]) ** (phonon_occ[(*x,)])
+            carry *= (parameters[dist_0] + parameters[dist_1]) ** (
+                1.0 * phonon_occ[(*x,)]
+            )
             return carry, x
 
         overlap = 1.0
@@ -427,7 +429,7 @@ class merrifield_complex:
 
         def scanned_fun(carry, x):
             dist = lattice.get_distance(elec_pos, x)
-            carry *= (gamma[dist]) ** (phonon_occ[(*x,)])
+            carry *= (gamma[dist]) ** (1.0 * phonon_occ[(*x,)])
             return carry, x
 
         overlap = 1.0 + 0.0j
@@ -440,7 +442,9 @@ class merrifield_complex:
         def scanned_fun(carry, x):
             dist_0 = lattice.get_distance(elec_pos[0], x)
             dist_1 = lattice.get_distance(elec_pos[1], x)
-            carry *= (parameters[dist_0] + parameters[dist_1]) ** (phonon_occ[(*x,)])
+            carry *= (parameters[dist_0] + parameters[dist_1]) ** (
+                1.0 * phonon_occ[(*x,)]
+            )
             return carry, x
 
         overlap = 1.0
@@ -524,7 +528,7 @@ class ssh_merrifield:
         # carry: [ overlap, bond_position ]
         def scanned_fun(carry, x):
             dist = lattice.get_bond_distance(carry[1], x)
-            carry[0] *= (parameters[dist]) ** (phonon_occ[(*x,)])
+            carry[0] *= (parameters[dist]) ** (1.0 * phonon_occ[(*x,)])
             return carry, x
 
         # carry: [ overlap ]
@@ -551,7 +555,9 @@ class ssh_merrifield:
         def scanned_fun(carry, x):
             dist_0 = lattice.get_bond_distance(carry[1], x)
             dist_1 = lattice.get_bond_distance(carry[2], x)
-            carry[0] *= (parameters[dist_0] + parameters[dist_1]) ** (phonon_occ[(*x,)])
+            carry[0] *= (parameters[dist_0] + parameters[dist_1]) ** (
+                1.0 * phonon_occ[(*x,)]
+            )
             return carry, x
 
         # carry: [ overlap, bond_position_0 ]
@@ -616,8 +622,8 @@ class bm_ssh_lf:
         def scanned_fun(carry, x):
             phonon_sites = lattice.get_neighboring_modes(x)
             carry += (
-                ((parameters[0]) ** (phonon_occ[(*phonon_sites[0],)]))
-                * ((-parameters[0]) ** (phonon_occ[(*phonon_sites[1],)]))
+                ((parameters[0]) ** (1.0 * phonon_occ[(*phonon_sites[0],)]))
+                * ((-parameters[0]) ** (1.0 * phonon_occ[(*phonon_sites[1],)]))
                 * (
                     jnp.sum(phonon_occ)
                     == (
@@ -826,7 +832,7 @@ class bm_ssh_merrifield:
             shift = lax.cond(
                 phonon_occ[(*x,)] == 0, lambda w: 1.0 + 0.0j, lambda w: gamma[dist], 0
             )
-            carry[0] *= (lr * shift) ** (phonon_occ[(*x,)])
+            carry[0] *= (lr * shift) ** (1.0 * phonon_occ[(*x,)])
             return carry, x
 
         # carry : [ overlap ]
@@ -865,7 +871,7 @@ class bm_ssh_merrifield:
                 lambda w: lr_0 * gamma[dist_0] + lr_1 * gamma[dist_1],
                 0,
             )
-            carry[0] *= (shift) ** (phonon_occ[(*x,)])
+            carry[0] *= (shift) ** (1.0 * phonon_occ[(*x,)])
             return carry, x
 
         # carry: [ overlap, bond_position_0 ]
