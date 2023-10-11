@@ -167,10 +167,8 @@ class one_dimensional_chain:
 
     # ordering is used in the ssh model
     def get_nearest_neighbors(self, pos):
-        return (
-            jnp.array([((pos[0] - 1) % self.n_sites,), ((pos[0] + 1) % self.n_sites,)])
-            if self.n_sites > 2
-            else jnp.array([(1 - pos[0],)])
+        return jnp.array(
+            [((pos[0] - 1) % self.n_sites,), ((pos[0] + 1) % self.n_sites,)]
         )
 
     def get_nearest_neighbor_modes(self, pos):
