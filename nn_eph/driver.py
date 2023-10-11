@@ -149,14 +149,18 @@ def driver(
         [energies, MPI.DOUBLE], [total_energies, MPI.DOUBLE], op=MPI.SUM, root=0
     )
     comm.barrier()
+    mean_energy = 0.0
     if rank == 0:
         total_energies /= total_weights
         # np.savetxt('parameters.dat', parameters[0])
         np.savetxt("samples.dat", np.stack((total_weights, total_energies)).T)
-        stat_utils.blocking_analysis(
+        mean_energy, _ = stat_utils.blocking_analysis(
             total_weights, total_energies, neql=0, printQ=True, writeBlockedQ=False
         )
-    return parameters
+
+    mean_energy = comm.bcast(mean_energy, root=0)
+
+    return mean_energy, parameters
 
 
 def driver_sr(
@@ -305,15 +309,18 @@ def driver_sr(
     comm.Reduce([weights, MPI.FLOAT], [total_weights, MPI.FLOAT], op=MPI.SUM, root=0)
     comm.Reduce([energies, MPI.FLOAT], [total_energies, MPI.FLOAT], op=MPI.SUM, root=0)
     comm.barrier()
+
+    mean_energy = 0.0
     if rank == 0:
         total_energies /= total_weights
         # np.savetxt('parameters.dat', parameters[0])
         np.savetxt("samples.dat", np.stack((total_weights, total_energies)).T)
-        stat_utils.blocking_analysis(
+        mean_energy, _ = stat_utils.blocking_analysis(
             total_weights, total_energies, neql=0, printQ=True, writeBlockedQ=False
         )
 
-    return parameters
+    mean_energy = comm.bcast(mean_energy, root=0)
+    return mean_energy, parameters
 
 
 if __name__ == "__main__":
