@@ -26,7 +26,16 @@ rank = comm.Get_rank()
 
 
 def driver(
-    walker, ham, parameters, wave, lattice, sampler, n_steps=1000, step_size=0.1, seed=0
+    walker,
+    ham,
+    parameters,
+    wave,
+    lattice,
+    sampler,
+    n_steps=1000,
+    step_size=0.1,
+    seed=0,
+    print_stats=True,
 ):
     moment_1 = jnp.zeros(wave.n_parameters)
     moment_2 = jnp.zeros(wave.n_parameters)
@@ -155,7 +164,11 @@ def driver(
         # np.savetxt('parameters.dat', parameters[0])
         np.savetxt("samples.dat", np.stack((total_weights, total_energies)).T)
         mean_energy, _ = stat_utils.blocking_analysis(
-            total_weights, total_energies, neql=0, printQ=True, writeBlockedQ=False
+            total_weights,
+            total_energies,
+            neql=0,
+            printQ=print_stats,
+            writeBlockedQ=False,
         )
 
     mean_energy = comm.bcast(mean_energy, root=0)
