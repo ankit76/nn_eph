@@ -103,10 +103,10 @@ class merrifield:
             carry *= (gamma[dist]) ** (1.0 * phonon_occ[(*x,)])
             return carry, x
 
-        overlap = 1.0
+        overlap = 1.0 + 0.0j
         overlap, _ = lax.scan(scanned_fun, overlap, jnp.array(lattice.sites))
 
-        return overlap
+        return jnp.log(overlap)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
@@ -118,28 +118,32 @@ class merrifield:
             )
             return carry, x
 
-        overlap = 1.0
+        overlap = 1.0 + 0.0j
         overlap, _ = lax.scan(scanned_fun, overlap, jnp.array(lattice.sites))
 
-        return overlap
+        return jnp.log(overlap)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
-        value, gradient = value_and_grad(self.calc_overlap, argnums=2)(
-            elec_pos, phonon_occ, parameters, lattice
+        value, grad_fun = vjp(
+            self.calc_overlap, elec_pos, phonon_occ, parameters, lattice
         )
-        gradient = self.serialize(gradient) / value
+        gradient = grad_fun(1.0 + 0.0j)[2]
+        gradient = self.serialize(gradient)  # / value
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
-        value, gradient = value_and_grad(self.calc_overlap_map, argnums=2)(
-            elec_pos, phonon_occ, parameters, lattice
+        value, grad_fun = vjp(
+            self.calc_overlap_map, elec_pos, phonon_occ, parameters, lattice
         )
+        gradient = grad_fun(1.0 + 0.0j)[2]
         gradient = self.serialize(gradient)
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
-        return gradient / value
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient  # / value
 
     def __hash__(self):
         return hash(self.n_parameters)
@@ -167,10 +171,12 @@ class sc_k_n:
             parameters[2 * nk : 2 * nk + self.n_e_bands * nk]
             + 1.0j * parameters[2 * nk + self.n_e_bands * nk :]
         ).reshape(self.n_e_bands, -1)
-        overlap = t[elec_pos[0], lattice.get_site_num(elec_pos[1])] * jnp.prod(
-            gamma**phonon_occ
+        overlap = (
+            t[elec_pos[0], lattice.get_site_num(elec_pos[1])]
+            * jnp.prod(gamma**phonon_occ)
+            + 0.0j
         )
-        return overlap
+        return jnp.log(overlap)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
@@ -180,10 +186,10 @@ class sc_k_n:
             carry *= (parameters[dist_0] + parameters[dist_1]) ** (phonon_occ[(*x,)])
             return carry, x
 
-        overlap = 1.0
+        overlap = 1.0 + 0.0j
         overlap, _ = lax.scan(scanned_fun, overlap, jnp.array(lattice.sites))
 
-        return overlap
+        return jnp.log(overlap)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
@@ -192,7 +198,7 @@ class sc_k_n:
             self.calc_overlap, elec_pos, phonon_occ, parameters_c, lattice
         )
         gradient = grad_fun(1.0 + 0.0j)[2]
-        gradient = self.serialize(gradient) / value
+        gradient = self.serialize(gradient)  # / value
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
@@ -203,8 +209,9 @@ class sc_k_n:
             elec_pos, phonon_occ, parameters, lattice
         )
         gradient = self.serialize(gradient)
-        gradient = gradient / value
+        gradient = gradient  # / value
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
     def __hash__(self):
@@ -230,7 +237,7 @@ class sc:
         )
         t = parameters[2 * nk : 3 * nk] + 1.0j * parameters[3 * nk :]
         overlap = t[lattice.get_site_num(elec_pos)] * jnp.prod(gamma**phonon_occ)
-        return overlap
+        return jnp.log(overlap + 0.0j)
 
     @partial(jit, static_argnums=(0, 6))
     def calc_overlap_ratio(
@@ -267,10 +274,10 @@ class sc:
             carry *= (parameters[dist_0] + parameters[dist_1]) ** (phonon_occ[(*x,)])
             return carry, x
 
-        overlap = 1.0
+        overlap = 1.0 + 0.0j
         overlap, _ = lax.scan(scanned_fun, overlap, jnp.array(lattice.sites))
 
-        return overlap
+        return jnp.log(overlap)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
@@ -279,7 +286,7 @@ class sc:
             self.calc_overlap, elec_pos, phonon_occ, parameters_c, lattice
         )
         gradient = grad_fun(1.0 + 0.0j)[2]
-        gradient = self.serialize(gradient) / value
+        gradient = self.serialize(gradient)  # / value
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
@@ -291,7 +298,8 @@ class sc:
         )
         gradient = self.serialize(gradient)
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
-        return gradient / value
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient  # / value
 
     def __hash__(self):
         return hash(self.n_parameters)
@@ -324,7 +332,7 @@ class sc_k_nep:
         overlap = t[elec_pos[0], lattice.get_site_num(elec_pos[1])] * jnp.prod(
             gamma**phonon_occ
         )
-        return overlap
+        return jnp.log(overlap + 0.0j)
 
     @partial(jit, static_argnums=(0, 6))
     def calc_overlap_ratio(
@@ -377,10 +385,10 @@ class sc_k_nep:
             carry *= (parameters[dist_0] + parameters[dist_1]) ** (phonon_occ[(*x,)])
             return carry, x
 
-        overlap = 1.0
+        overlap = 1.0 + 0.0j
         overlap, _ = lax.scan(scanned_fun, overlap, jnp.array(lattice.sites))
 
-        return overlap
+        return jnp.log(overlap)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
@@ -389,7 +397,7 @@ class sc_k_nep:
             self.calc_overlap, elec_pos, phonon_occ, parameters_c, lattice
         )
         gradient = grad_fun(1.0 + 0.0j)[2]
-        gradient = self.serialize(gradient) / value
+        gradient = self.serialize(gradient)  # / value
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
@@ -401,7 +409,8 @@ class sc_k_nep:
         )
         gradient = self.serialize(gradient)
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
-        return gradient / value
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient  # / value
 
     def __hash__(self):
         return hash(self.n_parameters, self.n_e_bands, self.n_p_bands)
@@ -435,7 +444,7 @@ class merrifield_complex:
         overlap = 1.0 + 0.0j
         overlap, _ = lax.scan(scanned_fun, overlap, jnp.array(lattice.sites))
 
-        return symm_fac * overlap
+        return jnp.log(symm_fac * overlap)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
@@ -447,31 +456,33 @@ class merrifield_complex:
             )
             return carry, x
 
-        overlap = 1.0
+        overlap = 1.0 + 0.0j
         overlap, _ = lax.scan(scanned_fun, overlap, jnp.array(lattice.sites))
 
-        return overlap
+        return jnp.log(overlap)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
         # value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
         parameters_c = parameters + 0.0j
-        value, grad_fun = vjp(
+        _, grad_fun = vjp(
             self.calc_overlap, elec_pos, phonon_occ, parameters_c, lattice
         )
         gradient = grad_fun(1.0 + 0.0j)[2]
-        gradient = self.serialize(gradient) / value
+        gradient = self.serialize(gradient)  # / value
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
-        value, gradient = value_and_grad(self.calc_overlap_map, argnums=2)(
+        _, gradient = value_and_grad(self.calc_overlap_map, argnums=2)(
             elec_pos, phonon_occ, parameters, lattice
         )
         gradient = self.serialize(gradient)
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
-        return gradient / value
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient  # / value
 
     def __hash__(self):
         return hash(self.n_parameters)
@@ -496,14 +507,14 @@ class ee_jastrow:
         )
         dist = lattice.get_distance(elec_pos[0], elec_pos[1])
         overlap = jnp.exp(-gamma[dist])
-        return overlap
+        return jnp.log(overlap)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
         value, gradient = value_and_grad(self.calc_overlap_map, argnums=2)(
             elec_pos, phonon_occ, parameters, lattice
         )
-        gradient = self.serialize(gradient) / value
+        gradient = self.serialize(gradient)  # / value
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
@@ -540,11 +551,11 @@ class ssh_merrifield:
             carry += overlap
             return carry, x
 
-        overlap = 0.0
+        overlap = 0.0 + 0.0j
         neighboring_bonds = lattice.get_neighboring_bonds(elec_pos)
         overlap, _ = lax.scan(outer_scanned_fun, overlap, neighboring_bonds)
 
-        return overlap
+        return jnp.log(overlap)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
@@ -581,16 +592,18 @@ class ssh_merrifield:
         overlap = 0.0
         overlap, _ = lax.scan(outer_outer_scanned_fun, overlap, neighboring_bonds_0)
 
-        return overlap
+        return jnp.log(overlap)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
-        value, gradient = value_and_grad(self.calc_overlap, argnums=2)(
-            elec_pos, phonon_occ, parameters, lattice
+        value, grad_fun = vjp(
+            self.calc_overlap, elec_pos, phonon_occ, parameters, lattice
         )
+        gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
         gradient = self.serialize(gradient)
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
-        return gradient / value
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient  # / value
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
@@ -599,7 +612,8 @@ class ssh_merrifield:
         )
         gradient = self.serialize(gradient)
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
-        return gradient / value
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient  # / value
 
     def __hash__(self):
         return hash(self.n_parameters)
@@ -634,11 +648,11 @@ class bm_ssh_lf:
             )
             return carry, x
 
-        overlap = 0.0
+        overlap = 0.0j
         neighboring_bonds = lattice.get_neighboring_bonds(elec_pos)
         overlap, _ = lax.scan(scanned_fun, overlap, neighboring_bonds)
 
-        return overlap
+        return jnp.log(overlap)
 
     # needs to be fixed
     @partial(jit, static_argnums=(0, 4))
@@ -776,27 +790,27 @@ class bm_ssh_lf:
             carry += overlap_0
             return carry, x
 
-        overlap = 0.0
+        overlap = 0.0j
         overlap, _ = lax.scan(outer_scanned_fun, overlap, neighboring_bonds_0)
 
-        return overlap
+        return jnp.log(overlap)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
-        value, gradient = value_and_grad(self.calc_overlap, argnums=2)(
-            elec_pos, phonon_occ, parameters, lattice
+        value, grad_fun = vjp(
+            self.calc_overlap, elec_pos, phonon_occ, parameters, lattice
         )
-        gradient = self.serialize(gradient) / value
+        gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
-        value, gradient = value_and_grad(self.calc_overlap_map, argnums=2)(
-            elec_pos, phonon_occ, parameters, lattice
+        value, grad_fun = vjp(
+            self.calc_overlap_map, elec_pos, phonon_occ, parameters, lattice
         )
-        gradient = self.serialize(gradient) / value
+        gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
@@ -848,7 +862,7 @@ class bm_ssh_merrifield:
         neighboring_bonds = lattice.get_neighboring_bonds(elec_pos)
         overlap, _ = lax.scan(outer_scanned_fun, overlap, neighboring_bonds)
 
-        return symm_fac * overlap
+        return jnp.log(symm_fac * overlap)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
@@ -895,28 +909,26 @@ class bm_ssh_merrifield:
         overlap = 0.0
         overlap, _ = lax.scan(outer_outer_scanned_fun, overlap, neighboring_bonds_0)
 
-        return symm_fac * overlap
+        return jnp.log(symm_fac * overlap)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
-        # value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
         value, grad_fun = vjp(
             self.calc_overlap, elec_pos, phonon_occ, parameters, lattice
         )
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
-        gradient = self.serialize(gradient) / value
+        gradient = self.serialize(gradient)  # / value
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
-        # value, gradient = value_and_grad(self.calc_overlap_map, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
         value, grad_fun = vjp(
             self.calc_overlap_map, elec_pos, phonon_occ, parameters, lattice
         )
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
-        gradient = self.serialize(gradient) / value
+        gradient = self.serialize(gradient)  # / value
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
@@ -976,13 +988,14 @@ class nn_jastrow:
         nn = parameters[1]
         inputs = self.get_input(elec_pos, phonon_occ, lattice.shape)
         outputs = jnp.array(self.nn_apply(nn, inputs), dtype="float32")
-        jastrow = jnp.exp(outputs[0])
+        # jastrow = jnp.exp(outputs[0])
+        jastrow = outputs[0]
 
         ref_overlap = self.reference.calc_overlap(
             elec_pos, phonon_occ, parameters[0], lattice
         )
 
-        return jastrow * ref_overlap
+        return jastrow + ref_overlap
 
     @partial(jit, static_argnums=(0, 6))
     def calc_overlap_ratio(
@@ -999,16 +1012,18 @@ class nn_jastrow:
         overlap_new = self.calc_overlap(
             elec_pos_new, phonon_occ_new, parameters, lattice
         )
-        return overlap_new / overlap_old
+        return jnp.exp(overlap_new - overlap_old)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
-        value, gradient = value_and_grad(self.calc_overlap, argnums=2)(
-            elec_pos, phonon_occ, parameters, lattice
+        value, grad_fun = vjp(
+            self.calc_overlap, elec_pos, phonon_occ, parameters, lattice
         )
+        gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
         gradient = self.serialize(gradient)
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
-        return gradient / value
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient  # / value
 
     def __hash__(self):
         return hash((self.nn_apply, self.reference, self.n_parameters))
@@ -1076,12 +1091,13 @@ class nn_jastrow_complex:
         outputs_phi = jnp.array(
             self.nn_apply_phi(nn_phi, inputs + 0.0j), dtype="complex64"
         )
-        overlap = jnp.exp(outputs_r[0]) * jnp.exp(1.0j * jnp.sum(outputs_phi))
+        # overlap = jnp.exp(outputs_r[0]) * jnp.exp(1.0j * jnp.sum(outputs_phi))
+        jastrow = outputs_r[0] + 1.0j * jnp.sum(outputs_phi)
         ref_overlap = self.reference.calc_overlap(
             elec_pos, phonon_occ, parameters[0], lattice
         )
         # symm_fac = lattice.get_symm_fac(elec_pos, self.k)
-        return ref_overlap * overlap
+        return ref_overlap + jastrow
 
     @partial(jit, static_argnums=(0, 6))
     def calc_overlap_ratio(
@@ -1098,7 +1114,7 @@ class nn_jastrow_complex:
         overlap_new = self.calc_overlap(
             elec_pos_new, phonon_occ_new, parameters, lattice
         )
-        return overlap_new / overlap_old
+        return jnp.exp(overlap_new - overlap_old)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
@@ -1107,7 +1123,7 @@ class nn_jastrow_complex:
         )
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
         # value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
-        gradient = self.serialize(gradient) / value
+        gradient = self.serialize(gradient)  # / value
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
@@ -1135,7 +1151,7 @@ class nn_complex:
 
     def __post_init__(self):
         if self.mask is None:
-            self.mask = jnp.array([1.0, 1.0])
+            self.mask = (1.0, 1.0)
 
     def serialize(self, parameters):
         flat_tree = tree_util.tree_flatten(parameters[0])[0]
@@ -1181,7 +1197,7 @@ class nn_complex:
         overlap = jnp.exp(outputs_r[0]) * jnp.exp(1.0j * jnp.sum(outputs_phi))
 
         symm_fac = lattice.get_symm_fac(elec_pos, self.k)
-        return overlap * symm_fac
+        return jnp.log(overlap * symm_fac)
 
     @partial(jit, static_argnums=(0, 6))
     def calc_overlap_ratio(
@@ -1198,16 +1214,14 @@ class nn_complex:
         overlap_new = self.calc_overlap(
             elec_pos_new, phonon_occ_new, parameters, lattice
         )
-        return overlap_new / overlap_old
+        return jnp.exp(overlap_new - overlap_old)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
-        value, grad_fun = vjp(
-            self.calc_overlap, elec_pos, phonon_occ, parameters, lattice
-        )
+        _, grad_fun = vjp(self.calc_overlap, elec_pos, phonon_occ, parameters, lattice)
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
         # value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
-        gradient = self.serialize(gradient) / value
+        gradient = self.serialize(gradient)  # / value
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
@@ -1274,7 +1288,7 @@ class nn_complex_n:
         overlap = jnp.exp(outputs_r[0]) * jnp.exp(1.0j * jnp.sum(outputs_phi))
 
         symm_fac = lattice.get_symm_fac(elec_pos, self.k)
-        return overlap * symm_fac
+        return jnp.log(overlap * symm_fac)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
@@ -1285,7 +1299,8 @@ class nn_complex_n:
         # value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
         gradient = self.serialize(gradient)
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
-        return gradient / value
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient  # / value
 
     def __hash__(self):
         return hash(
@@ -1357,7 +1372,7 @@ class nn_jastrow_2:
         nn = parameters[1]
         inputs = self.get_input_2(elec_pos, phonon_occ, lattice.shape)
         outputs = jnp.array(self.nn_apply(nn, inputs), dtype="float32")
-        jastrow = jnp.exp(outputs[0])
+        jastrow = outputs[0]
 
         ref_overlap = self.reference.calc_overlap_map(
             elec_pos, phonon_occ, parameters[0], lattice
@@ -1366,7 +1381,7 @@ class nn_jastrow_2:
             elec_pos, phonon_occ, parameters[2], lattice
         )
 
-        return ee_jastrow_overlap * jastrow * ref_overlap
+        return ee_jastrow_overlap + jastrow + ref_overlap
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
@@ -1375,7 +1390,8 @@ class nn_jastrow_2:
         )
         gradient = self.serialize(gradient)
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
-        return gradient / value
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient  # / value
 
     def __hash__(self):
         return hash((self.nn_apply, self.reference, self.ee_jastrow, self.n_parameters))
@@ -1477,14 +1493,14 @@ class nn_jastrow_2_complex:
         outputs_phi = jnp.array(
             self.nn_apply_phi(nn_phi, inputs + 0.0j), dtype="complex64"
         )
-        overlap = jnp.exp(outputs_r[0]) * jnp.exp(1.0j * jnp.sum(outputs_phi))
+        overlap = outputs_r[0] + 1.0j * jnp.sum(outputs_phi)
         ref_overlap = self.reference.calc_overlap_map(
             elec_pos, phonon_occ, parameters[0], lattice
         )
         ee_overlap = self.ee_jastrow.calc_overlap_map(
             elec_pos, phonon_occ, parameters[1], lattice
         )
-        return ee_overlap * ref_overlap * overlap
+        return ee_overlap + ref_overlap + overlap
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
@@ -1492,7 +1508,7 @@ class nn_jastrow_2_complex:
             self.calc_overlap_map, elec_pos, phonon_occ, parameters, lattice
         )
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
-        gradient = self.serialize(gradient) / value
+        gradient = self.serialize(gradient)  # / value
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
@@ -1565,7 +1581,7 @@ class spin_nn_complex:
         )
         # overlap = jnp.exp(outputs_r[0]) * jnp.exp(1.j * jnp.sum(outputs_phi))
         overlap = jnp.exp(outputs_r[0]) * lattice.get_marshall_sign(walker)
-        return overlap
+        return jnp.log(overlap)
 
     @partial(jit, static_argnums=(0, 3))
     def calc_overlap_gradient(self, walker, parameters, lattice):
@@ -1574,7 +1590,8 @@ class spin_nn_complex:
         # value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
         gradient = self.serialize(gradient)
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
-        return gradient / value
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient  # / value
 
     def __hash__(self):
         return hash((self.nn_apply_r, self.nn_apply_phi, self.n_parameters, self.k))

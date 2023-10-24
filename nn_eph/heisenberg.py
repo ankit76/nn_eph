@@ -29,7 +29,7 @@ class heisenberg:
             return self.j * walker[neighbors[0]] * walker[neighbors[1]]
 
         # diagonal
-        energy = jnp.sum(vmap(z_ene)(jnp.array(lattice.bonds)))
+        energy = jnp.sum(vmap(z_ene)(jnp.array(lattice.bonds))) + 0.0j
 
         # spin flips
         def flip(bond):
@@ -45,7 +45,7 @@ class heisenberg:
                 * (walker[i2] == 0.5)
                 * wave.calc_overlap(new_walker, parameters, lattice)
             )
-            ratio_1 = new_overlap / overlap
+            ratio_1 = jnp.exp(new_overlap - overlap)
 
             # s1- s2+
             new_walker = walker.at[i1].set(-0.5)
@@ -55,7 +55,7 @@ class heisenberg:
                 * (walker[i2] == -0.5)
                 * wave.calc_overlap(new_walker, parameters, lattice)
             )
-            ratio_2 = new_overlap / overlap
+            ratio_2 = jnp.exp(new_overlap - overlap)
 
             return ratio_1, ratio_2
 
@@ -85,7 +85,7 @@ class heisenberg:
         walker = walker.at[i1].set(-walker[i1])
         walker = walker.at[i2].set(-walker[i2])
 
-        return energy, qp_weight, overlap_gradient, weight, walker, overlap
+        return energy, qp_weight, overlap_gradient, weight, walker, jnp.exp(overlap)
 
     def __hash__(self):
         return hash((self.j,))
@@ -120,13 +120,17 @@ class heisenberg_bond:
         new_spins = spins.at[i1].set(0.5)
         new_spins = new_spins.at[i2].set(-0.5)
         new_overlap = wave.calc_overlap([new_spins, phonons], parameters, lattice)
-        ratio_2 = (spins[i1] == -0.5) * (spins[i2] == 0.5) * new_overlap / overlap
+        ratio_2 = (
+            (spins[i1] == -0.5) * (spins[i2] == 0.5) * jnp.exp(new_overlap - overlap)
+        )
         qp_weight += ratio_2 / 2
 
         new_spins = spins.at[i1].set(-0.5)
         new_spins = new_spins.at[i2].set(0.5)
         new_overlap = wave.calc_overlap([new_spins, phonons], parameters, lattice)
-        ratio_5 = (spins[i1] == 0.5) * (spins[i2] == -0.5) * new_overlap / overlap
+        ratio_5 = (
+            (spins[i1] == 0.5) * (spins[i2] == -0.5) * jnp.exp(new_overlap - overlap)
+        )
         qp_weight += ratio_5 / 2
 
         ## c c
@@ -157,7 +161,7 @@ class heisenberg_bond:
         # qp_weight += (phonons[bond_i])**0.5 * (phonons[bond_i_r])**0.5 * new_overlap / overlap
 
         # diagonal
-        energy = self.omega * jnp.sum(phonons)
+        energy = self.omega * jnp.sum(phonons) + 0.0j
 
         # spin flips
         # carry = energy
@@ -177,7 +181,7 @@ class heisenberg_bond:
             new_overlap = (phonons[bond][0] < self.max_n_phonons) * wave.calc_overlap(
                 [spins, new_phonons_c], parameters, lattice
             )
-            ratio_0 = new_overlap / overlap / (phonons[bond][0] + 1) ** 0.5
+            ratio_0 = jnp.exp(new_overlap - overlap) / (phonons[bond][0] + 1) ** 0.5
             carry += (
                 self.j
                 * self.g
@@ -191,7 +195,7 @@ class heisenberg_bond:
             new_overlap = (phonons[bond][0] > 0) * wave.calc_overlap(
                 [spins, new_phonons_a], parameters, lattice
             )
-            ratio_1 = (phonons[bond][0]) ** 0.5 * new_overlap / overlap
+            ratio_1 = (phonons[bond][0]) ** 0.5 * jnp.exp(new_overlap - overlap)
             carry += (
                 self.j
                 * self.g
@@ -206,7 +210,11 @@ class heisenberg_bond:
             new_spins = spins.at[i1].set(0.5)
             new_spins = new_spins.at[i2].set(-0.5)
             new_overlap = wave.calc_overlap([new_spins, phonons], parameters, lattice)
-            ratio_2 = (spins[i1] == -0.5) * (spins[i2] == 0.5) * new_overlap / overlap
+            ratio_2 = (
+                (spins[i1] == -0.5)
+                * (spins[i2] == 0.5)
+                * jnp.exp(new_overlap - overlap)
+            )
             carry += self.j * ratio_2 / 2
 
             # create phonon
@@ -216,8 +224,7 @@ class heisenberg_bond:
             ratio_3 = (
                 (spins[i1] == -0.5)
                 * (spins[i2] == 0.5)
-                * new_overlap
-                / overlap
+                * jnp.exp(new_overlap - overlap)
                 / (phonons[bond][0] + 1) ** 0.5
             )
             carry += self.j * self.g * (phonons[bond][0] + 1) ** 0.5 * ratio_3 / 2
@@ -230,8 +237,7 @@ class heisenberg_bond:
                 (spins[i1] == -0.5)
                 * (spins[i2] == 0.5)
                 * (phonons[bond][0]) ** 0.5
-                * new_overlap
-                / overlap
+                * jnp.exp(new_overlap - overlap)
             )
             carry += self.j * self.g * (phonons[bond][0]) ** 0.5 * ratio_4 / 2
 
@@ -240,7 +246,11 @@ class heisenberg_bond:
             new_spins = spins.at[i1].set(-0.5)
             new_spins = new_spins.at[i2].set(0.5)
             new_overlap = wave.calc_overlap([new_spins, phonons], parameters, lattice)
-            ratio_5 = (spins[i1] == 0.5) * (spins[i2] == -0.5) * new_overlap / overlap
+            ratio_5 = (
+                (spins[i1] == 0.5)
+                * (spins[i2] == -0.5)
+                * jnp.exp(new_overlap - overlap)
+            )
             carry += self.j * ratio_5 / 2
 
             # create phonon
@@ -250,8 +260,7 @@ class heisenberg_bond:
             ratio_6 = (
                 (spins[i1] == 0.5)
                 * (spins[i2] == -0.5)
-                * new_overlap
-                / overlap
+                * jnp.exp(new_overlap - overlap)
                 / (phonons[bond][0] + 1) ** 0.5
             )
             carry += self.j * self.g * (phonons[bond][0] + 1) ** 0.5 * ratio_6 / 2
@@ -264,8 +273,7 @@ class heisenberg_bond:
                 (spins[i1] == 0.5)
                 * (spins[i2] == -0.5)
                 * (phonons[bond][0]) ** 0.5
-                * new_overlap
-                / overlap
+                * jnp.exp(new_overlap - overlap)
             )
             carry += self.j * self.g * (phonons[bond][0]) ** 0.5 * ratio_7 / 2
 
@@ -310,7 +318,7 @@ class heisenberg_bond:
         walker[1] = walker[1].at[bond].set(walker[1][bond] + phonon_change)
         walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
 
-        return energy, qp_weight, overlap_gradient, weight, walker, overlap
+        return energy, qp_weight, overlap_gradient, weight, walker, jnp.exp(overlap)
 
     def __hash__(self):
         return hash((self.omega, self.g, self.j, self.max_n_phonons))

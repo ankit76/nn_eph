@@ -22,10 +22,10 @@ def test_merrifield_overlap():
 
     elec_pos = (3,)
     phonon_occ = jnp.array([1, 3, 0, 2])
-    overlap = wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice)
+    overlap = jnp.exp(wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice))
 
     phonon_occ = jnp.array([1, 3, 0, 3])
-    overlap_ex = wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice)
+    overlap_ex = jnp.exp(wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice))
     assert np.allclose(overlap_ex, overlap * gamma[0])
 
     l_x, l_y = 3, 3
@@ -36,10 +36,10 @@ def test_merrifield_overlap():
 
     elec_pos = (1, 1)
     phonon_occ_0 = jnp.array(np.random.randint(3, size=(l_y, l_x)))
-    overlap = wave.calc_overlap(elec_pos, phonon_occ_0, gamma, lattice)
+    overlap = jnp.exp(wave.calc_overlap(elec_pos, phonon_occ_0, gamma, lattice))
 
     phonon_occ = phonon_occ_0.at[0, 0].add(1)
-    overlap_ex = wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice)
+    overlap_ex = jnp.exp(wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice))
     assert np.allclose(overlap_ex, overlap * gamma[2])
 
 
@@ -53,10 +53,10 @@ def test_merrifield_overlap_map():
 
     elec_pos = jnp.array([(0,), (1,)])
     phonon_occ = jnp.array([1, 3, 0, 2])
-    overlap = wave.calc_overlap_map(elec_pos, phonon_occ, gamma, lattice)
+    overlap = jnp.exp(wave.calc_overlap_map(elec_pos, phonon_occ, gamma, lattice))
 
     phonon_occ = jnp.array([1, 3, 0, 3])
-    overlap_ex = wave.calc_overlap_map(elec_pos, phonon_occ, gamma, lattice)
+    overlap_ex = jnp.exp(wave.calc_overlap_map(elec_pos, phonon_occ, gamma, lattice))
     assert np.allclose(overlap_ex, overlap * (gamma[1] + gamma[2]))
 
 
@@ -70,10 +70,10 @@ def test_ssh_merrifield_overlap():
 
     elec_pos = (0,)
     phonon_occ = jnp.array([[1]])
-    overlap = wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice)
+    overlap = jnp.exp(wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice))
 
     phonon_occ = jnp.array([[2]])
-    overlap_ex = wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice)
+    overlap_ex = jnp.exp(wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice))
     assert np.allclose(overlap_ex, overlap * gamma[0])
 
     n_sites = 4
@@ -84,10 +84,10 @@ def test_ssh_merrifield_overlap():
 
     elec_pos = (0,)
     phonon_occ = jnp.array([[3, 0, 0, 0]])
-    overlap = wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice)
+    overlap = jnp.exp(wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice))
 
     phonon_occ = jnp.array([[4, 0, 0, 0]])
-    overlap_ex = wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice)
+    overlap_ex = jnp.exp(wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice))
     assert np.allclose(overlap_ex, overlap * gamma[0])
 
     l_x, l_y = 3, 3
@@ -103,7 +103,7 @@ def test_ssh_merrifield_overlap():
             for _ in range(2)
         ]
     )
-    overlap = wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice)
+    overlap = jnp.exp(wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice))
     assert np.allclose(overlap, 0.05733717065853551)
 
 
@@ -122,7 +122,7 @@ def test_ssh_merrifield_overlap_map():
             for _ in range(2)
         ]
     )
-    overlap = wave.calc_overlap_map(elec_pos, phonon_occ, gamma, lattice)
+    overlap = jnp.exp(wave.calc_overlap_map(elec_pos, phonon_occ, gamma, lattice))
     assert np.allclose(overlap, 4.256158210332774)
 
 
@@ -136,7 +136,7 @@ def test_bm_ssh_merrifield_overlap():
 
     elec_pos = (3,)
     phonon_occ = jnp.array([[0, 0, 0, 2]])
-    overlap = wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice)
+    overlap = jnp.exp(wave.calc_overlap(elec_pos, phonon_occ, gamma, lattice))
     assert np.allclose(overlap, -0.02974506 + 0.0392389j)
 
 
@@ -156,7 +156,7 @@ def test_nn_jastrow_overlap():
 
     elec_pos = (0,)
     phonon_occ = jnp.array([[2, 0, 1, 0]])
-    overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
+    overlap = jnp.exp(wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice))
     assert np.allclose(overlap, 0.004827891090786609)
 
     model = models.CNN([4, 1], [(2,), (2,)])
@@ -166,7 +166,7 @@ def test_nn_jastrow_overlap():
     parameters = [gamma, nn_parameters]
     wave = wavefunctions.nn_jastrow(model.apply, reference, n_nn_parameters)
 
-    overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
+    overlap = jnp.exp(wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice))
     # assert np.allclose(overlap, 0.030337517632646055)
 
     l_x, l_y = 4, 4
@@ -186,7 +186,7 @@ def test_nn_jastrow_overlap():
     phonon_occ = jnp.array(
         [[np.random.randint(2) for _ in range(l_x)] for _ in range(l_y)]
     )
-    overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
+    overlap = jnp.exp(wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice))
     assert np.allclose(overlap, 0.0007504690111926278)
 
     model = models.CNN([4, 1], [(2, 2), (2, 2)])
@@ -196,7 +196,7 @@ def test_nn_jastrow_overlap():
     parameters = [gamma, nn_parameters]
     wave = wavefunctions.nn_jastrow(model.apply, reference, n_nn_parameters)
 
-    overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
+    overlap = jnp.exp(wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice))
     # assert np.allclose(overlap, 0.04981814914850025)
 
 
@@ -218,7 +218,7 @@ def test_nn_jastrow_2_overlap():
 
     elec_pos = jnp.array([(0,), (2,)])
     phonon_occ = jnp.array([2, 0, 1, 0])
-    overlap = wave.calc_overlap_map(elec_pos, phonon_occ, parameters, lattice)
+    overlap = jnp.exp(wave.calc_overlap_map(elec_pos, phonon_occ, parameters, lattice))
     assert np.allclose(overlap, 0.37565744 - 0.4129256j)
 
 
