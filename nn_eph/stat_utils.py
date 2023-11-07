@@ -56,4 +56,4 @@ def reject_outliers(data, obs, m=10.0):
     d = np.abs(data[:, obs] - np.median(data[:, obs]))
     mdev = np.median(d)
     s = d / mdev if mdev else 0.0
-    return data[s < m]
+    return data[s < m], s < m

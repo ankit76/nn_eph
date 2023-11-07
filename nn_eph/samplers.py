@@ -14,13 +14,13 @@ from jax import random, tree_util
 
 
 @dataclass
-class continuous_time:
+class continuous_time_1:
     n_eql: int
     n_samples: int
 
     @partial(jit, static_argnums=(0, 2, 4, 5))
     def sampling(self, walker, ham, parameters, wave, lattice, random_numbers):
-        # carry : [ walker, weight, energy, grad, lene_grad, qp_weight ]
+        # carry : [ walker, weight, energy, grad, lene_grad, qp_weight, dev_thresh, median_energy ]
         def scanned_fun(carry, x):
             (
                 energy,
@@ -32,6 +32,99 @@ class continuous_time:
             ) = ham.local_energy_and_update(
                 carry[0], parameters, wave, lattice, random_numbers[x]
             )
+            weight = (jnp.abs(energy - carry[7]) < carry[6]) * weight + 1.0e-8
+            energy = jnp.where(weight > 1.0e-8, energy, carry[7])
+            carry[1] += weight
+            carry[2] += weight * (jnp.real(energy) - carry[2]) / carry[1]
+            carry[3] = carry[3] + weight * (jnp.real(gradient) - carry[3]) / carry[1]
+            carry[4] = (
+                carry[4]
+                + weight
+                * (jnp.real(jnp.conjugate(energy) * gradient) - carry[4])
+                / carry[1]
+            )
+            carry[5] += weight * (jnp.real(qp_weight) - carry[5]) / carry[1]
+            return carry, (jnp.real(energy), qp_weight, weight, carry[0])
+
+        weight = 0.0
+        energy = 0.0
+        gradient = jnp.zeros(wave.n_parameters)
+        lene_gradient = jnp.zeros(wave.n_parameters)
+        qp_weight = 0.0
+        [walker, _, _, _, _, _, _, _], (energies_eq, _, _, _) = lax.scan(
+            scanned_fun,
+            [walker, weight, energy, gradient, lene_gradient, qp_weight, jnp.inf, 0.0],
+            jnp.arange(self.n_eql),
+        )
+
+        median_energy = jnp.median(energies_eq)
+        d = jnp.abs(energies_eq - median_energy)
+        mdev = jnp.median(d)
+        mdev = jnp.where(mdev == 0.0, 1.0, mdev)
+
+        weight = 0.0
+        energy = 0.0
+        gradient = jnp.zeros(wave.n_parameters)
+        lene_gradient = jnp.zeros(wave.n_parameters)
+        qp_weight = 0.0
+        [_, weight, energy, gradient, lene_gradient, qp_weight, _, _], (
+            energies,
+            qp_weights,
+            weights,
+            walkers,
+        ) = lax.scan(
+            scanned_fun,
+            [
+                walker,
+                weight,
+                energy,
+                gradient,
+                lene_gradient,
+                qp_weight,
+                1000000.0 * mdev,
+                median_energy,
+            ],
+            jnp.arange(self.n_samples),
+        )
+
+        # energy, gradient, lene_gradient are weighted
+        return (
+            weight,
+            energy,
+            gradient,
+            lene_gradient,
+            qp_weight,
+            energies,
+            qp_weights,
+            weights,
+            walkers,
+        )
+
+    def __hash__(self):
+        return hash((self.n_eql, self.n_samples))
+
+
+@dataclass
+class continuous_time:
+    n_eql: int
+    n_samples: int
+
+    @partial(jit, static_argnums=(0, 2, 4, 5))
+    def sampling(self, walker, ham, parameters, wave, lattice, random_numbers):
+        # carry : [ walker, weight, energy, grad, lene_grad, qp_weight, dev_thresh, median_energy ]
+        def scanned_fun(carry, x):
+            (
+                energy,
+                qp_weight,
+                gradient,
+                weight,
+                carry[0],
+                _,
+            ) = ham.local_energy_and_update(
+                carry[0], parameters, wave, lattice, random_numbers[x]
+            )
+            weight = (jnp.abs(energy - carry[7]) < carry[6]) * weight + 1.0e-8
+            energy = jnp.where(weight > 1.0e-8, energy, carry[7])
             carry[1] += weight
             carry[2] += weight * (jnp.real(energy) - carry[2]) / carry[1]
             carry[3] = carry[3] + weight * (jnp.real(gradient) - carry[3]) / carry[1]
@@ -49,24 +142,38 @@ class continuous_time:
         gradient = jnp.zeros(wave.n_parameters)
         lene_gradient = jnp.zeros(wave.n_parameters)
         qp_weight = 0.0
-        [walker, _, _, _, _, _], (_, _, _) = lax.scan(
+        [walker, _, _, _, _, _, _, _], (energies_eq, _, _) = lax.scan(
             scanned_fun,
-            [walker, weight, energy, gradient, lene_gradient, qp_weight],
+            [walker, weight, energy, gradient, lene_gradient, qp_weight, jnp.inf, 0.0],
             jnp.arange(self.n_eql),
         )
+
+        median_energy = jnp.median(energies_eq)
+        d = jnp.abs(energies_eq - median_energy)
+        mdev = jnp.median(d)
+        mdev = jnp.where(mdev == 0.0, 1.0, mdev)
 
         weight = 0.0
         energy = 0.0
         gradient = jnp.zeros(wave.n_parameters)
         lene_gradient = jnp.zeros(wave.n_parameters)
         qp_weight = 0.0
-        [_, weight, energy, gradient, lene_gradient, qp_weight], (
+        [_, weight, energy, gradient, lene_gradient, qp_weight, _, _], (
             energies,
             qp_weights,
             weights,
         ) = lax.scan(
             scanned_fun,
-            [walker, weight, energy, gradient, lene_gradient, qp_weight],
+            [
+                walker,
+                weight,
+                energy,
+                gradient,
+                lene_gradient,
+                qp_weight,
+                100.0 * mdev,
+                median_energy,
+            ],
             jnp.arange(self.n_samples),
         )
 
