@@ -48,6 +48,9 @@ def driver(
         print(f"# iter       ene           qp_weight        grad_norm           time")
     iter_energy = []
     calc_time = 0.0
+    best_parameters = parameters.copy()
+    min_energy = np.inf
+    dev_thresh_fac = 1.0e6
     for iteration in range(n_steps):
         key, subkey = random.split(key)
         random_numbers = random.uniform(subkey, shape=(sampler.n_samples,))
@@ -59,7 +62,6 @@ def driver(
         #  g_scan = g * (1. - jnp.exp(-(iteration - starter_iters) / 500))
         # g_scan = 6. - (6. - g) * (1. - jnp.exp(-(iteration - starter_iters) / 500))
         init = time.time()
-        dev_thresh_fac = 10000.0
         (
             weight,
             energy,
@@ -72,6 +74,17 @@ def driver(
         ) = sampler.sampling(
             walker, ham, parameters, wave, lattice, random_numbers, dev_thresh_fac
         )
+
+        # reject outliers
+        samples_clean, _ = stat_utils.reject_outliers(
+            np.stack((energies, qp_weights, weights)).T, 0, 10.0
+        )
+        energies_clean = samples_clean[:, 0]
+        qp_weights_clean = samples_clean[:, 1]
+        weights_clean = samples_clean[:, 2]
+        weight = np.sum(weights_clean)
+        energy = np.average(energies_clean, weights=weights_clean)
+        qp_weight = np.average(qp_weights_clean, weights=weights_clean)
 
         # average and print energies for the current step
         weight = np.array([weight], dtype="float32")
@@ -117,7 +130,6 @@ def driver(
             print(
                 f"{iteration: 5d}   {total_energy[0]: .6e}    {total_qp_weight[0]: .6e}   {jnp.linalg.norm(ene_gradient): .6e}     {calc_time: .6e}"
             )
-            iter_energy.append(total_energy[0])
             # print(f'iter: {iteration: 5d}, ene: {total_energy[0]: .6e}, qp_weight: {total_qp_weight[0]: .6e}, grad: {jnp.linalg.norm(ene_gradient): .6e}')
             # print(f'total_weight: {total_weight}')
             # print(f'total_energy: {total_energy}')
@@ -142,6 +154,17 @@ def driver(
             new_parameters = wave.update_parameters(parameters, -update)
             with open("parameters.bin", "wb") as fh:
                 pickle.dump(new_parameters, fh)
+
+            if iteration > 0.8 * n_steps:
+                if total_energy[0] < min_energy:
+                    best_parameters = new_parameters.copy()
+                    # print("new best parameters")
+                    # print(min_energy, total_energy[0])
+                    min_energy = total_energy[0]
+                    with open("best_parameters.bin", "wb") as fh:
+                        pickle.dump(best_parameters, fh)
+                iter_energy.append(total_energy[0])
+
             # new_parameters = [ update_parameters(parameters[0], -update), parameters[1] ]
             # new_parameters = parameters - update
             # new_parameters = new_parameters.at[0].set(0.)
@@ -176,9 +199,14 @@ def driver(
             writeBlockedQ=False,
         )
         lowest_energy = np.min(np.array(iter_energy))
+        print(f"Lowest energy: {lowest_energy}")
 
     mean_energy = comm.bcast(mean_energy, root=0)
     lowest_energy = comm.bcast(lowest_energy, root=0)
+
+    comm.barrier()
+    parameters = comm.bcast(best_parameters, root=0)
+    comm.barrier()
 
     return lowest_energy, parameters
 
