@@ -110,7 +110,16 @@ class continuous_time:
     n_samples: int
 
     @partial(jit, static_argnums=(0, 2, 4, 5))
-    def sampling(self, walker, ham, parameters, wave, lattice, random_numbers):
+    def sampling(
+        self,
+        walker,
+        ham,
+        parameters,
+        wave,
+        lattice,
+        random_numbers,
+        dev_thresh_fac=100.0,
+    ):
         # carry : [ walker, weight, energy, grad, lene_grad, qp_weight, dev_thresh, median_energy ]
         def scanned_fun(carry, x):
             (
@@ -171,7 +180,7 @@ class continuous_time:
                 gradient,
                 lene_gradient,
                 qp_weight,
-                100.0 * mdev,
+                dev_thresh_fac * mdev,
                 median_energy,
             ],
             jnp.arange(self.n_samples),

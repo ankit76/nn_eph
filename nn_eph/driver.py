@@ -46,7 +46,7 @@ def driver(
 
     if rank == 0:
         print(f"# iter       ene           qp_weight        grad_norm           time")
-
+    iter_energy = []
     calc_time = 0.0
     for iteration in range(n_steps):
         key, subkey = random.split(key)
@@ -59,6 +59,7 @@ def driver(
         #  g_scan = g * (1. - jnp.exp(-(iteration - starter_iters) / 500))
         # g_scan = 6. - (6. - g) * (1. - jnp.exp(-(iteration - starter_iters) / 500))
         init = time.time()
+        dev_thresh_fac = 10000.0
         (
             weight,
             energy,
@@ -68,7 +69,9 @@ def driver(
             energies,
             qp_weights,
             weights,
-        ) = sampler.sampling(walker, ham, parameters, wave, lattice, random_numbers)
+        ) = sampler.sampling(
+            walker, ham, parameters, wave, lattice, random_numbers, dev_thresh_fac
+        )
 
         # average and print energies for the current step
         weight = np.array([weight], dtype="float32")
@@ -114,6 +117,7 @@ def driver(
             print(
                 f"{iteration: 5d}   {total_energy[0]: .6e}    {total_qp_weight[0]: .6e}   {jnp.linalg.norm(ene_gradient): .6e}     {calc_time: .6e}"
             )
+            iter_energy.append(total_energy[0])
             # print(f'iter: {iteration: 5d}, ene: {total_energy[0]: .6e}, qp_weight: {total_qp_weight[0]: .6e}, grad: {jnp.linalg.norm(ene_gradient): .6e}')
             # print(f'total_weight: {total_weight}')
             # print(f'total_energy: {total_energy}')
@@ -159,6 +163,7 @@ def driver(
     )
     comm.barrier()
     mean_energy = 0.0
+    lowest_energy = 0.0
     if rank == 0:
         total_energies /= total_weights
         # np.savetxt('parameters.dat', parameters[0])
@@ -170,10 +175,12 @@ def driver(
             printQ=print_stats,
             writeBlockedQ=False,
         )
+        lowest_energy = np.min(np.array(iter_energy))
 
     mean_energy = comm.bcast(mean_energy, root=0)
+    lowest_energy = comm.bcast(lowest_energy, root=0)
 
-    return mean_energy, parameters
+    return lowest_energy, parameters
 
 
 def driver_sr(
