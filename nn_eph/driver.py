@@ -1,3 +1,4 @@
+import math
 import os
 import time
 
@@ -16,7 +17,7 @@ import jax.numpy as jnp
 from jax import random, tree_util
 from mpi4py import MPI
 
-from nn_eph import stat_utils
+from nn_eph import samplers, stat_utils
 
 print = partial(print, flush=True)
 
@@ -77,7 +78,7 @@ def driver(
 
         # reject outliers
         samples_clean, _ = stat_utils.reject_outliers(
-            np.stack((energies, qp_weights, weights)).T, 0, 10.0
+            np.stack((energies, qp_weights, weights)).T, 0, 10000.0
         )
         energies_clean = samples_clean[:, 0]
         qp_weights_clean = samples_clean[:, 1]
@@ -174,8 +175,39 @@ def driver(
         parameters = comm.bcast(new_parameters, root=0)
         comm.barrier()
 
-    weights = np.array(weights, dtype="float64")
-    energies = np.array(weights * energies, dtype="float64")
+    lowest_energy = 0.0
+    comm.barrier()
+    parameters = comm.bcast(best_parameters, root=0)
+    comm.barrier()
+
+    # final accurate run
+    n_eql = 10 * sampler.n_eql
+    n_samples = 10 * sampler.n_samples
+    sampler_1 = samplers.continuous_time(n_eql, n_samples)
+    key, subkey = random.split(key)
+    random_numbers = random.uniform(subkey, shape=(sampler_1.n_samples,))
+    out = sampler_1.sampling(
+        walker, ham, parameters, wave, lattice, random_numbers, dev_thresh_fac=1.0e8
+    )
+    energies = out[-3]
+    qp_weights = out[-2]
+    weights = out[-1]
+    samples_clean, _ = stat_utils.reject_outliers(
+        np.stack((energies, qp_weights, weights)).T, 0, 1000.0
+    )
+    energies_clean = samples_clean[:, 0]
+    qp_weights_clean = samples_clean[:, 1]
+    weights_clean = samples_clean[:, 2]
+    weight = np.sum(weights_clean)
+    energy = np.average(energies_clean, weights=weights_clean)
+
+    weight = np.array([weight], dtype="float32")
+    energy = np.array([weight * energy], dtype="float32")
+    total_weight = 0.0 * weight
+    total_energy = 0.0 * weight
+
+    weights = np.array(weights_clean, dtype="float64")
+    energies = np.array(weights_clean * energies_clean, dtype="float64")
     total_weights = 0.0 * weights
     total_energies = 0.0 * weights
 
@@ -184,29 +216,24 @@ def driver(
     comm.Reduce(
         [energies, MPI.DOUBLE], [total_energies, MPI.DOUBLE], op=MPI.SUM, root=0
     )
+    comm.Reduce([weight, MPI.FLOAT], [total_weight, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([energy, MPI.FLOAT], [total_energy, MPI.FLOAT], op=MPI.SUM, root=0)
     comm.barrier()
-    mean_energy = 0.0
-    lowest_energy = 0.0
+
     if rank == 0:
+        total_energy /= total_weight
         total_energies /= total_weights
-        # np.savetxt('parameters.dat', parameters[0])
-        np.savetxt("samples.dat", np.stack((total_weights, total_energies)).T)
-        mean_energy, _ = stat_utils.blocking_analysis(
+        print("Clean energy: ", total_energy[0])
+        lowest_energy, _ = stat_utils.blocking_analysis(
             total_weights,
             total_energies,
             neql=0,
             printQ=print_stats,
             writeBlockedQ=False,
         )
-        lowest_energy = np.min(np.array(iter_energy))
         print(f"Lowest energy: {lowest_energy}")
 
-    mean_energy = comm.bcast(mean_energy, root=0)
     lowest_energy = comm.bcast(lowest_energy, root=0)
-
-    comm.barrier()
-    parameters = comm.bcast(best_parameters, root=0)
-    comm.barrier()
 
     return lowest_energy, parameters
 

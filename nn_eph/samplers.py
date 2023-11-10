@@ -69,9 +69,7 @@ class continuous_time_1:
         median_energy = jnp.median(energies_eq)
         d = jnp.abs(energies_eq - median_energy)
         mdev = jnp.median(d)
-        mdev = jnp.where(
-            mdev < jnp.abs(median_energy) / 10.0, jnp.abs(median_energy) / 10, mdev
-        )
+        mdev = jnp.where(mdev == 0.0, 1.0, mdev)
 
         weight = 0.0
         energy = 0.0
