@@ -195,9 +195,9 @@ def driver(
     samples_clean, _ = stat_utils.reject_outliers(
         np.stack((energies, qp_weights, weights)).T, 0, 1000.0
     )
-    energies_clean = samples_clean[:, 0]
-    qp_weights_clean = samples_clean[:, 1]
-    weights_clean = samples_clean[:, 2]
+    energies_clean = samples_clean[:, 0].reshape(-1)
+    qp_weights_clean = samples_clean[:, 1].reshape(-1)
+    weights_clean = samples_clean[:, 2].reshape(-1)
     weight = np.sum(weights_clean)
     energy = np.average(energies_clean, weights=weights_clean)
 
@@ -206,27 +206,36 @@ def driver(
     total_weight = 0.0 * weight
     total_energy = 0.0 * weight
 
-    weights = np.array(weights_clean, dtype="float64")
-    energies = np.array(weights_clean * energies_clean, dtype="float64")
+    comm.barrier()
+    comm.Reduce([weight, MPI.FLOAT], [total_weight, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([energy, MPI.FLOAT], [total_energy, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.barrier()
+
+    weights = np.array(weights, dtype="float64")
+    energies = np.array(weights * energies, dtype="float64")
     total_weights = 0.0 * weights
     total_energies = 0.0 * weights
-
     comm.barrier()
     comm.Reduce([weights, MPI.DOUBLE], [total_weights, MPI.DOUBLE], op=MPI.SUM, root=0)
     comm.Reduce(
         [energies, MPI.DOUBLE], [total_energies, MPI.DOUBLE], op=MPI.SUM, root=0
     )
-    comm.Reduce([weight, MPI.FLOAT], [total_weight, MPI.FLOAT], op=MPI.SUM, root=0)
-    comm.Reduce([energy, MPI.FLOAT], [total_energy, MPI.FLOAT], op=MPI.SUM, root=0)
     comm.barrier()
 
     if rank == 0:
         total_energy /= total_weight
         total_energies /= total_weights
         print("Clean energy: ", total_energy[0])
+
+        samples_clean, _ = stat_utils.reject_outliers(
+            np.stack((total_energies, total_weights)).T, 0, 1000.0
+        )
+        energies_clean = samples_clean[:, 0].reshape(-1)
+        weights_clean = samples_clean[:, 1].reshape(-1)
+
         lowest_energy, _ = stat_utils.blocking_analysis(
-            total_weights,
-            total_energies,
+            weights_clean,
+            energies_clean,
             neql=0,
             printQ=print_stats,
             writeBlockedQ=False,
