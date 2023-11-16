@@ -1597,6 +1597,156 @@ class spin_nn_complex:
         return hash((self.nn_apply_r, self.nn_apply_phi, self.n_parameters, self.k))
 
 
+@dataclass
+class ghf:
+    """
+    Slater determinant for a generalized Hartree-Fock state
+
+    Parameters
+    ----------
+    n_parameters : int
+        Number of parameters in the wave function
+    n_elec : tuple
+        Number of spin-up and spin-down electrons
+    """
+
+    n_parameters: int
+    n_elec: tuple
+
+    def serialize(self, parameters: Sequence) -> jnp.ndarray:
+        """
+        Serialize the parameters into a single array
+
+        Parameters
+        ----------
+        parameters : Sequence
+            Parameters of the wave function
+
+        Returns
+        -------
+        jnp.ndarray
+            Serialized parameters
+        """
+        return jnp.concatenate((parameters[0].reshape(-1), parameters[1].reshape(-1)))
+
+    def update_parameters(self, parameters: Sequence, update: jnp.ndarray) -> Sequence:
+        """
+        Update the parameters of the wave function
+
+        Parameters
+        ----------
+        parameters : Sequence
+            Parameters of the wave function
+        update : jnp.ndarray
+            Update to the parameters
+
+        Returns
+        -------
+        Sequence
+            Updated parameters
+        """
+        parameters[0] = parameters[0] + update[self.n_parameters // 2 :].reshape(
+            -1, self.n_elec[0]
+        )
+        parameters[1] = parameters[1] + update[self.n_parameters // 2 :].reshape(
+            -1, self.n_elec[1]
+        )
+        return parameters
+
+    @partial(jit, static_argnums=(0, 3))
+    def calc_overlap(
+        self, walker_data: dict, parameters: Sequence, lattice: Any
+    ) -> complex:
+        """
+        Calculate the overlap of the wave function with a walker
+
+        Parameters
+        ----------
+        walker_data : dict
+            Walker data including walker and a helper matrix r_mat = inv(overlap_mat) used for fast overlap ratio calculations
+        parameters : Sequence
+            Parameters of the wave function
+        lattice : Lattice
+            Lattice object
+
+        Returns
+        -------
+        complex
+            Logarithm of the overlap of the wave function with the walker
+        """
+        walker = walker_data["walker"]
+        overlap_up = jnp.linalg.det(parameters[0][walker[0], :])
+        overlap_dn = jnp.linalg.det(parameters[1][walker[1], :])
+        return jnp.log(overlap_up * overlap_dn)
+
+    # only supports single excitation for now
+    # does not consider parity
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_ratio(
+        self,
+        walker_data: dict,
+        excitation: jnp.ndarray,
+        parameters: Sequence,
+        lattice: Any,
+    ) -> complex:
+        """
+        Calculate the overlap ratio of the wave function with a walker after a single excitation
+
+        Parameters
+        ----------
+        walker_data : dict
+            Walker data including walker and a helper matrix r_mat = inv(overlap_mat) used for fast overlap ratio calculations
+        excitation : jnp.ndarray
+            Excitation to be performed on the walker (sigma, i, a) for i,sigma -> a,sigma
+        parameters : Sequence
+            Parameters of the wave function
+        lattice : Lattice
+            Lattice object
+
+        Returns
+        -------
+        complex
+            overlap ratio of the wave function with the walker after the excitation
+        """
+        return lax.cond(
+            excitation[0] == 0,
+            lambda x: walker_data["r_mat"][0][excitation[2], excitation[1]],
+            lambda x: walker_data["r_mat"][1][excitation[2], excitation[1]],
+            0.0,
+        )
+
+    @partial(jit, static_argnums=(0, 3))
+    def calc_overlap_gradient(
+        self, walker_data: dict, parameters: Sequence, lattice: Any
+    ) -> jnp.ndarray:
+        """
+        Calculate the gradient of the logarithm of the overlap of the wave function with the walker with respect to the parameters
+
+        Parameters
+        ----------
+        walker_data : dict
+            Walker data including walker and a helper matrix r_mat = inv(overlap_mat) used for fast overlap ratio calculations
+        parameters : Sequence
+            Parameters of the wave function
+        lattice : Lattice
+            Lattice object
+
+        Returns
+        -------
+        jnp.ndarray
+            Gradient of the log overlap
+        """
+        value, grad_fun = vjp(self.calc_overlap, walker_data, parameters, lattice)
+        gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[1]
+        gradient = self.serialize(gradient)
+        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient
+
+    def __hash__(self):
+        return hash((self.n_parameters, self.n_elec))
+
+
 if __name__ == "__main__":
     import lattices
     import models

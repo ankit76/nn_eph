@@ -222,6 +222,45 @@ def test_nn_jastrow_2_overlap():
     assert np.allclose(overlap, 0.37565744 - 0.4129256j)
 
 
+def test_ghf():
+    n_sites = 5
+    lattice = lattices.one_dimensional_chain(n_sites)
+    np.random.seed(seed)
+
+    n_elec = (2, 3)
+    wave = wavefunctions.ghf(n_sites * sum(n_elec), n_elec)
+    parameters = [
+        jnp.array(
+            np.random.randn(n_sites, n_elec[0])
+            + 1.0j * np.random.randn(n_sites, n_elec[0])
+        ),
+        jnp.array(
+            np.random.randn(n_sites, n_elec[1])
+            + 1.0j * np.random.randn(n_sites, n_elec[1])
+        ),
+    ]
+    walker = (jnp.array([0, 1]), jnp.array([0, 1, 2]))
+    overlap_mat_up = parameters[0][walker[0], :]
+    overlap_mat_dn = parameters[1][walker[1], :]
+    r_mat = (
+        parameters[0] @ jnp.linalg.inv(overlap_mat_up),
+        parameters[1] @ jnp.linalg.inv(overlap_mat_dn),
+    )
+    walker_data = {"walker": walker, "r_mat": r_mat}
+    overlap = wave.calc_overlap(walker_data, parameters, lattice)
+    excitation = jnp.array((0, 1, 2))
+    overlap_ratio = wave.calc_overlap_ratio(
+        walker_data, excitation, parameters, lattice
+    )
+    walker_1 = (jnp.array([0, 2]), jnp.array([0, 1, 2]))
+    walker_data["walker"] = walker_1
+    overlap_1 = wave.calc_overlap(walker_data, parameters, lattice)
+    assert np.allclose(jnp.exp(overlap_1), jnp.exp(overlap) * overlap_ratio)
+
+    grad = wave.calc_overlap_gradient(walker_data, parameters, lattice)
+    assert grad.size == wave.n_parameters
+
+
 if __name__ == "__main__":
     test_merrifield_overlap()
     test_merrifield_overlap_map()
@@ -230,3 +269,4 @@ if __name__ == "__main__":
     test_bm_ssh_merrifield_overlap()
     test_nn_jastrow_overlap()
     test_nn_jastrow_2_overlap()
+    test_ghf()
