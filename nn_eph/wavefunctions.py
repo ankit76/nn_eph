@@ -1598,11 +1598,11 @@ class spin_nn_complex:
 
 
 @dataclass
-class ghf:
+class uhf:
     """
-    Slater determinant for a generalized Hartree-Fock state
+    Slater determinant for an unrestricted Hartree-Fock state
 
-    Parameters
+    Attributes
     ----------
     n_parameters : int
         Number of parameters in the wave function
@@ -1612,6 +1612,36 @@ class ghf:
 
     n_parameters: int
     n_elec: tuple
+
+    @partial(jit, static_argnums=(0, 3))
+    def build_walker_data(self, walker_occ, parameters: Sequence, lattice: Any) -> dict:
+        """
+        Build helpers for fast local energy evaluation and package with the walker
+
+        Parameters
+        ----------
+        walker : jnp.ndarray
+            Walker to be packaged as occupation number array
+        parameters : Sequence
+            Parameters of the wave function
+        lattice : Lattice
+            Lattice object
+
+        Returns
+        -------
+        dict
+            Walker data including walker (occ and pos) and a helper matrix r_mat = inv(overlap_mat) used for fast overlap ratio calculations
+        """
+        elec_pos_up = jnp.nonzero(walker_occ[0].reshape(-1), size=self.n_elec[0])[0]
+        elec_pos_dn = jnp.nonzero(walker_occ[1].reshape(-1), size=self.n_elec[1])[0]
+        walker_pos = (elec_pos_up, elec_pos_dn)
+        overlap_mat_up = parameters[0][elec_pos_up, :]
+        overlap_mat_dn = parameters[1][elec_pos_dn, :]
+        r_mat = (
+            parameters[0] @ jnp.linalg.inv(overlap_mat_up),
+            parameters[1] @ jnp.linalg.inv(overlap_mat_dn),
+        )
+        return {"walker": walker_pos, "walker_occ": walker_occ, "r_mat": r_mat}
 
     def serialize(self, parameters: Sequence) -> jnp.ndarray:
         """
@@ -1645,10 +1675,10 @@ class ghf:
         Sequence
             Updated parameters
         """
-        parameters[0] = parameters[0] + update[self.n_parameters // 2 :].reshape(
+        parameters[0] = parameters[0] + update[: parameters[0].size].reshape(
             -1, self.n_elec[0]
         )
-        parameters[1] = parameters[1] + update[self.n_parameters // 2 :].reshape(
+        parameters[1] = parameters[1] + update[parameters[0].size :].reshape(
             -1, self.n_elec[1]
         )
         return parameters
