@@ -408,21 +408,13 @@ class two_dimensional_grid:
         )
         return jnp.array(neighbors)
 
+    @partial(jit, static_argnums=(0,))
     def get_nearest_neighbors(self, pos):
         right = (pos[0], (pos[1] + 1) % self.l_x)
         down = ((pos[0] + 1) % self.l_y, pos[1])
         left = (pos[0], (pos[1] - 1) % self.l_x)
         up = ((pos[0] - 1) % self.l_y, pos[1])
-        neighbors = []
-        if (self.l_x == 2) & (self.l_y == 2):
-            neighbors = [right, down]
-        elif self.l_x == 2:
-            neighbors = [right, down, up]
-        elif self.l_y == 2:
-            neighbors = [right, down, left]
-        else:
-            neighbors = [right, down, left, up]
-        return jnp.array(neighbors)
+        return jnp.array([right, down, left, up])
 
     # used in the ssh model
     @partial(jit, static_argnums=(0,))
