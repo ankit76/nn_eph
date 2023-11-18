@@ -150,8 +150,8 @@ class hubbard:
         )
         neighbor_ind = new_ind % lattice.coord_num
         neighbor_pos = lattice.get_nearest_neighbors(pos)[neighbor_ind]
-        walker = walker.at[spin_ind, *pos].set(0)
-        walker = walker.at[spin_ind, *neighbor_pos].set(1)
+        walker = walker.at[spin_ind, (*pos,)].set(0)
+        walker = walker.at[spin_ind, (*neighbor_pos,)].set(1)
 
         energy = jnp.where(jnp.isnan(energy), 0.0, energy)
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
