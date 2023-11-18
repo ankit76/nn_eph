@@ -99,7 +99,7 @@ class hubbard:
         def scanned_fun(carry, x):
             neighbor_site_num = lattice.get_site_num(x)
             excitation = jnp.array((carry[1], carry[3], neighbor_site_num))
-            ratio = (walker[carry[1], *x] == 0) * wave.calc_overlap_ratio(
+            ratio = (walker[carry[1]][(*x,)] == 0) * wave.calc_overlap_ratio(
                 walker_data, excitation, parameters, lattice
             )
             carry[0] -= ratio
