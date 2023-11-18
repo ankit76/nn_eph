@@ -5,10 +5,12 @@ Work in progress!
 Requirements
 ------------
 
-* python (>= 3.7)
+* python (>= 3.9)
 * mpi4py
-* numpy, scipy
-* jax, jaxlib 
+* numpy
+* scipy
+* jax 
+* jaxlib
 * flax
 
 Examples
