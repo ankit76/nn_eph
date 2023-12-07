@@ -627,7 +627,7 @@ class bond_ssh:
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
-        return energy, qp_weight, overlap_gradient, weight, walker, overlap
+        return energy, qp_weight, overlap_gradient, weight, walker, jnp.exp(overlap)
 
     def __hash__(self):
         return hash((self.omega, self.g, self.max_n_phonons))
@@ -771,7 +771,7 @@ class ssh:
 
         # jax.debug.print('new_walker: {}\n', walker)
 
-        return energy, qp_weight, overlap_gradient, weight, walker, overlap
+        return energy, qp_weight, overlap_gradient, weight, walker, jnp.exp(overlap)
 
     def __hash__(self):
         return hash((self.omega, self.g, self.max_n_phonons))
