@@ -52,8 +52,13 @@ def blocking_analysis(weights, energies, neql=0, printQ=False, writeBlockedQ=Fal
     return meanEnergy, plateauError
 
 
-def reject_outliers(data, obs, m=10.0):
+def reject_outliers(data, obs, m=10.0, printQ=False):
     d = np.abs(data[:, obs] - np.median(data[:, obs]))
-    mdev = np.median(d) + 1e-8
+    mdev = np.median(d) + 1.0e-4
     s = d / mdev if mdev else 0.0
-    return data[s < m], s < m
+    clean_indices = s < m
+    clean_data = data[clean_indices]
+    if printQ:
+        print(f"# Median deviation: {mdev:.6e}")
+        print(f"# Removed {data.shape[0] - clean_data.shape[0]} outliers")
+    return clean_data, clean_indices

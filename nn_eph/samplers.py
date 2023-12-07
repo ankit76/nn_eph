@@ -37,7 +37,7 @@ class continuous_time_1:
                 gradient,
                 weight,
                 carry[0],
-                _,
+                overlap,
             ) = ham.local_energy_and_update(
                 carry[0], parameters, wave, lattice, random_numbers[x]
             )
@@ -53,14 +53,14 @@ class continuous_time_1:
                 / carry[1]
             )
             carry[5] += weight * (jnp.real(qp_weight) - carry[5]) / carry[1]
-            return carry, (jnp.real(energy), qp_weight, weight, carry[0])
+            return carry, (jnp.real(energy), qp_weight, weight, carry[0], overlap)
 
         weight = 0.0
         energy = 0.0
         gradient = jnp.zeros(wave.n_parameters)
         lene_gradient = jnp.zeros(wave.n_parameters)
         qp_weight = 0.0
-        [walker, _, _, _, _, _, _, _], (energies_eq, _, _, _) = lax.scan(
+        [walker, _, _, _, _, _, _, _], (energies_eq, _, _, _, _) = lax.scan(
             scanned_fun,
             [walker, weight, energy, gradient, lene_gradient, qp_weight, jnp.inf, 0.0],
             jnp.arange(self.n_eql),
@@ -68,8 +68,7 @@ class continuous_time_1:
 
         median_energy = jnp.median(energies_eq)
         d = jnp.abs(energies_eq - median_energy)
-        mdev = jnp.median(d)
-        mdev = jnp.where(mdev == 0.0, 1.0, mdev)
+        mdev = jnp.median(d) + 1.0e-4
 
         weight = 0.0
         energy = 0.0
@@ -81,6 +80,7 @@ class continuous_time_1:
             qp_weights,
             weights,
             walkers,
+            overlaps,
         ) = lax.scan(
             scanned_fun,
             [
@@ -107,6 +107,7 @@ class continuous_time_1:
             qp_weights,
             weights,
             walkers,
+            overlaps,
         )
 
     def __hash__(self):
@@ -168,8 +169,7 @@ class continuous_time:
 
         median_energy = jnp.median(energies_eq)
         d = jnp.abs(energies_eq - median_energy)
-        mdev = jnp.median(d)
-        mdev = jnp.where(mdev == 0.0, 1.0, mdev)
+        mdev = jnp.median(d) + 1.0e-4
 
         weight = 0.0
         energy = 0.0
@@ -217,7 +217,15 @@ class continuous_time_sr:
     n_samples: int
 
     @partial(jit, static_argnums=(0, 2, 4, 5))
-    def sampling(self, walker, ham, parameters, wave, lattice, random_numbers):
+    def sampling(
+        self,
+        walker,
+        ham,
+        parameters,
+        wave,
+        lattice,
+        random_numbers,
+    ):
         # carry : [ walker, weight, energy, grad, lene_grad, qp_weight, metric ]
         def scanned_fun(carry, x):
             (
