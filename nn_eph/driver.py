@@ -37,6 +37,7 @@ def driver(
     step_size=0.1,
     seed=0,
     print_stats=True,
+    dev_thresh_fac=1.0e6,
 ):
     moment_1 = jnp.zeros(wave.n_parameters)
     moment_2 = jnp.zeros(wave.n_parameters)
@@ -51,7 +52,7 @@ def driver(
     calc_time = 0.0
     best_parameters = parameters.copy()
     min_energy = np.inf
-    dev_thresh_fac = 1.0e6
+    # dev_thresh_fac = 1.0e6
     for iteration in range(n_steps):
         key, subkey = random.split(key)
         random_numbers = random.uniform(subkey, shape=(sampler.n_samples,))
@@ -78,7 +79,7 @@ def driver(
 
         # reject outliers
         samples_clean, _ = stat_utils.reject_outliers(
-            np.stack((energies, qp_weights, weights)).T, 0, 10000.0
+            np.stack((energies, qp_weights, weights)).T, 0, dev_thresh_fac / 100.0
         )
         energies_clean = samples_clean[:, 0]
         qp_weights_clean = samples_clean[:, 1]
@@ -187,7 +188,13 @@ def driver(
     key, subkey = random.split(key)
     random_numbers = random.uniform(subkey, shape=(sampler_1.n_samples,))
     out = sampler_1.sampling(
-        walker, ham, parameters, wave, lattice, random_numbers, dev_thresh_fac=1.0e8
+        walker,
+        ham,
+        parameters,
+        wave,
+        lattice,
+        random_numbers,
+        dev_thresh_fac=dev_thresh_fac * 100.0,
     )
     energies = out[-3]
     qp_weights = out[-2]
@@ -228,7 +235,10 @@ def driver(
         print("Clean energy: ", total_energy[0])
 
         samples_clean, _ = stat_utils.reject_outliers(
-            np.stack((total_energies, total_weights)).T, 0, 1000.0
+            np.stack((total_energies, total_weights)).T,
+            0,
+            dev_thresh_fac / 1000.0,
+            printQ=True,
         )
         energies_clean = samples_clean[:, 0].reshape(-1)
         weights_clean = samples_clean[:, 1].reshape(-1)
