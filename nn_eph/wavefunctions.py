@@ -6,13 +6,15 @@ os.environ["JAX_PLATFORM_NAME"] = "cpu"
 import pickle
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, List, Sequence, Tuple
 
 # os.environ['JAX_ENABLE_X64'] = 'True'
 # os.environ['JAX_DISABLE_JIT'] = 'True'
 from jax import jit, lax
 from jax import numpy as jnp
-from jax import random, tree_util, value_and_grad, vjp
+from jax import random
+from jax import scipy as jsp
+from jax import tree_util, value_and_grad, vjp
 
 
 # TODO: needs to be changed for 2 sites
@@ -27,6 +29,23 @@ def get_input_r(elec_pos, phonon_occ, lattice_shape):
                 )
             )
     return jnp.stack([*input_ar], axis=-1)
+
+
+@partial(jit, static_argnums=(2,))
+def get_input_r_r(elec_pos, phonon_occ, lattice_shape):
+    input_ar = phonon_occ.reshape(-1)
+    input_ar_0 = input_ar.take(
+        elec_pos[0] + jnp.arange(lattice_shape[0]), axis=0, mode="wrap"
+    )
+    # reflected
+    input_ar_1 = input_ar.take(
+        elec_pos[0] - jnp.arange(lattice_shape[0]), axis=0, mode="wrap"
+    )
+    # input_ar_1 = jnp.flip(input_ar_0, axis=0)
+    hash_0 = jnp.dot(input_ar_0, 10 ** jnp.arange(lattice_shape[0] - 1, -1, -1))
+    hash_1 = jnp.dot(input_ar_1, 10 ** jnp.arange(lattice_shape[0] - 1, -1, -1))
+    input_ar = lax.cond(hash_0 < hash_1, lambda w: input_ar_0, lambda w: input_ar_1, 0)
+    return jnp.stack([input_ar], axis=-1)
 
 
 # TODO: needs to be changed for 2 sites
@@ -50,6 +69,33 @@ def get_input_r_1(elec_pos, phonon_occ, lattice_shape):
 def get_input_k(elec_k, phonon_occ, lattice_shape):
     elec_k_ar = jnp.zeros(lattice_shape)
     elec_k_ar = elec_k_ar.at[elec_k].set(1)
+    input_ar = jnp.stack([elec_k_ar, *phonon_occ.reshape(-1, *lattice_shape)], axis=-1)
+    return input_ar
+
+
+@partial(jit, static_argnums=(2,))
+def get_input_k_2(
+    elec_k: List[tuple], phonon_occ: jnp.ndarray, lattice_shape: Sequence
+) -> jnp.ndarray:
+    """Makes NN input array from a bipolaron k-space walker
+
+    Parameters
+    ----------
+    elec_k : Sequence
+        Pair of electron momenta
+    phonon_occ : jnp.ndarray
+        Phonon occupations
+    lattice_shape : Sequence
+        Lattice shape
+
+    Returns
+    -------
+    jnp.ndarray
+        Input array
+    """
+    elec_k_ar = jnp.zeros(lattice_shape)
+    elec_k_ar = elec_k_ar.at[elec_k[0]].add(1)
+    elec_k_ar = elec_k_ar.at[elec_k[1]].add(1)
     input_ar = jnp.stack([elec_k_ar, *phonon_occ.reshape(-1, *lattice_shape)], axis=-1)
     return input_ar
 
@@ -80,6 +126,13 @@ def get_input_spin_phonon(walker, lattice_shape):
     spins = walker[0]
     phonons = walker[1]
     input_ar = jnp.stack([spins, *phonons.reshape(-1, *lattice_shape)], axis=-1)
+    return input_ar
+
+
+# TODO: add symmetries
+@jit
+def get_input_n(walker):
+    input_ar = jnp.stack([walker[0][0], walker[0][1], walker[1]], axis=-1)
     return input_ar
 
 
@@ -128,6 +181,201 @@ class merrifield:
         value, grad_fun = vjp(
             self.calc_overlap, elec_pos, phonon_occ, parameters, lattice
         )
+        gradient = grad_fun(1.0 + 0.0j)[2]
+        gradient = self.serialize(gradient)  # / value
+        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+        value, grad_fun = vjp(
+            self.calc_overlap_map, elec_pos, phonon_occ, parameters, lattice
+        )
+        gradient = grad_fun(1.0 + 0.0j)[2]
+        gradient = self.serialize(gradient)
+        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient  # / value
+
+    def __hash__(self):
+        return hash(self.n_parameters)
+
+
+@dataclass
+class rotated_merrifield:
+    """
+    Merrifield with electronic orbital rotations
+    exp(gamma_ij ntilde_i ( a_j - a_j^dagger))
+
+    Parameters
+    ----------
+    n_parameters : int
+        Number of parameters
+    """
+
+    n_parameters: int
+
+    def serialize(self, parameters):
+        """
+        Serialize parameters
+
+        Parameters
+        ----------
+        parameters : dict
+            Parameters dictionary, contains gamma and kappa matrices
+
+        Returns
+        -------
+        array
+            Serialized parameters
+        """
+        return jnp.concatenate(
+            [parameters["gamma"].reshape(-1), parameters["kappa"].reshape(-1)]
+        )
+
+    def update_parameters(self, parameters, update):
+        """
+        Update parameters
+
+        Parameters
+        ----------
+        parameters : array
+            Parameters
+        update : array
+            Update
+
+        Returns
+        -------
+        array
+            Updated parameters
+        """
+        parameters["gamma"] += update[: parameters["gamma"].size].reshape(
+            parameters["gamma"].shape
+        )
+        parameters["kappa"] += update[parameters["gamma"].size :].reshape(
+            parameters["kappa"].shape
+        )
+        return parameters
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap(self, elec_pos, phonon_occ, parameters, lattice):
+        """
+        Calculate overlap
+
+        Parameters
+        ----------
+        elec_pos : array
+            Electronic position
+        phonon_occ : array
+            Phonon occupations
+        parameters : array
+            Parameters
+        lattice : Lattice
+            Lattice
+
+        Returns
+        -------
+        array
+            Log overlap
+        """
+
+        # k = (0.0,)
+        # symm_fac = jnp.exp(2 * jnp.pi * 1.0j * k[0] * elec_pos[0] / lattice.n_sites)
+        symm_fac = 1.0
+        # assert 1 == 0
+        # phonon_occ = get_input_r(elec_pos, phonon_occ, lattice.shape).reshape(
+        #    phonon_occ.shape
+        # )
+        # elec_pos = (0,)
+
+        gamma = parameters["gamma"]
+        rotations = parameters["kappa"]
+        # # make skew symmetric matrix with kappa as upper triangle
+        # rotations = 0.0 * gamma
+        # for i in range(gamma.shape[0]):
+        #     kappa_mat_i = jnp.zeros_like(gamma[i])
+        #     kappa_mat_i = kappa_mat_i.at[jnp.triu_indices(gamma.shape[1], k=1)].set(
+        #         kappa[i]
+        #     )
+        #     kappa_mat_i = kappa_mat_i - kappa_mat_i.T
+        #     rotations = rotations.at[i].set(jsp.linalg.expm(kappa_mat_i))
+
+        # import jax
+
+        # jax.debug.print('gamma:\n{}\n', gamma)
+        # jax.debug.print('rotations:\n{}\n', rotations)
+        # return 1
+
+        n_bond_types = lattice.coord_num // 2
+        n_bonds = len(lattice.bonds) // n_bond_types
+        bonds = jnp.array(lattice.bonds).reshape(n_bond_types, n_bonds, -1)
+
+        # inner scan over phonons
+        # carry: [ overlap, bond_index, orb_index ]
+        def scanned_fun(carry, x):
+            bond_type = x[0]
+            orb_index = carry[2]
+            bond_index = carry[1]
+            carry[0] *= (gamma[bond_type, bond_index, orb_index]) ** (
+                1.0 * phonon_occ[(*x,)]
+            )
+            carry[1] += 1
+            return carry, x
+
+        elec_index = lattice.get_site_num(elec_pos)
+
+        # outer scan over electron orbitals
+        # carry: [ overlap, orb_index, bond_type ]
+        def outer_scanned_fun(carry, x):
+            bond_type = carry[2]
+            orb_index = carry[1]
+            overlap_x = 1.0 + 0.0j
+            [overlap_x, _, _], _ = lax.scan(
+                scanned_fun,
+                [overlap_x, 0, orb_index],
+                bonds[bond_type],
+            )
+            carry[0] += rotations[bond_type, elec_index, orb_index] * overlap_x
+            carry[1] += 1
+            return carry, x
+
+        # outer outer scan over bond types
+        # carry: overlap
+        def outer_outer_scanned_fun(carry, x):
+            overlap_b = 0.0 + 0.0j
+            [overlap_b, _, _], _ = lax.scan(
+                outer_scanned_fun,
+                [overlap_b, 0, x],
+                jnp.array(lattice.sites),
+            )
+            carry += overlap_b
+            return carry, x
+
+        overlap = 0.0 + 0.0j
+        overlap, _ = lax.scan(
+            outer_outer_scanned_fun, overlap, jnp.arange(n_bond_types)
+        )
+        return jnp.log(symm_fac * overlap)
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
+        def scanned_fun(carry, x):
+            dist_0 = lattice.get_distance(elec_pos[0], x)
+            dist_1 = lattice.get_distance(elec_pos[1], x)
+            carry *= (parameters[dist_0] + parameters[dist_1]) ** (
+                1.0 * phonon_occ[(*x,)]
+            )
+            return carry, x
+
+        overlap = 1.0 + 0.0j
+        overlap, _ = lax.scan(scanned_fun, overlap, jnp.array(lattice.sites))
+
+        return jnp.log(overlap)
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+        _, grad_fun = vjp(self.calc_overlap, elec_pos, phonon_occ, parameters, lattice)
         gradient = grad_fun(1.0 + 0.0j)[2]
         gradient = self.serialize(gradient)  # / value
         gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
@@ -1148,6 +1396,7 @@ class nn_complex:
     mask: Sequence = None
     k: Sequence = None
     get_input: Callable = get_input_r
+    lattice_shape: Sequence = None
 
     def __post_init__(self):
         if self.mask is None:
@@ -1187,9 +1436,12 @@ class nn_complex:
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap(self, elec_pos, phonon_occ, parameters, lattice):
+        lattice_shape = self.lattice_shape
+        if self.lattice_shape is None:
+            lattice_shape = lattice.shape
         nn_r = parameters[0]
         nn_phi = parameters[1]
-        inputs = self.get_input(elec_pos, phonon_occ, lattice.shape)
+        inputs = self.get_input(elec_pos, phonon_occ, lattice_shape)
         outputs_r = jnp.array(self.nn_apply_r(nn_r, inputs + 0.0j), dtype="complex64")
         outputs_phi = jnp.array(
             self.nn_apply_phi(nn_phi, inputs + 0.0j), dtype="complex64"
@@ -1227,7 +1479,15 @@ class nn_complex:
         return gradient
 
     def __hash__(self):
-        return hash((self.nn_apply_r, self.nn_apply_phi, self.n_parameters, self.k))
+        return hash(
+            (
+                self.nn_apply_r,
+                self.nn_apply_phi,
+                self.n_parameters,
+                self.k,
+                self.lattice_shape,
+            )
+        )
 
 
 @dataclass
@@ -1775,6 +2035,248 @@ class uhf:
 
     def __hash__(self):
         return hash((self.n_parameters, self.n_elec))
+
+
+@dataclass
+class nn_jastrow_n:
+    """
+    Neural net electron phonon jastrow on top of an electronic mean field state
+
+    Attributes
+    ----------
+    nn_apply_r : Callable
+        Neural network function for the absolute value of the amplitude
+    nn_apply_phi : Callable
+        Neural network function for the phase of the amplitude
+    reference : Any
+        Reference wave function
+    n_parameters : int
+        Number of parameters in the wave function
+        These are set in the constructor as only the number of NN parameters but get modified to include reference parameters after construction
+    mask : Sequence
+        Determines which parameters are optimized
+    get_input : Callable
+        Function to get the input for the NN
+    """
+
+    nn_apply_r: Callable
+    nn_apply_phi: Callable
+    reference: Any
+    n_parameters: int
+    mask: Sequence = None
+    get_input: Callable = get_input_r
+
+    def __post_init__(self):
+        self.n_parameters += self.reference.n_parameters
+        if self.mask is None:
+            self.mask = jnp.array([1.0, 1.0])
+
+    @partial(jit, static_argnums=(0, 3))
+    def build_walker_data(self, walker, parameters: Sequence, lattice: Any) -> dict:
+        """
+        Build helpers for fast local energy evaluation and package with the walker
+
+        Parameters
+        ----------
+        walker : Sequence
+            walker : [ (elec_occ_up, elec_occ_dn), phonon_occ ]
+        parameters : Sequence
+            Parameters of the wave function
+        lattice : Lattice
+            Lattice object
+
+        Returns
+        -------
+        dict
+            Walker data including walker (occ and pos) and a helper matrix r_mat = inv(overlap_mat) used for fast overlap ratio calculations
+        """
+        elec_occ = walker[0]
+        phonon_occ = walker[1]
+        ref_walker_data = self.reference.build_walker_data(
+            elec_occ, parameters[2], lattice
+        )
+        return {
+            "walker": walker,
+            "phonon_occ": phonon_occ,
+            "ref_walker_data": ref_walker_data,
+        }
+
+    def serialize(self, parameters: Sequence) -> jnp.ndarray:
+        """
+        Serialize the parameters into a single array
+
+        Parameters
+        ----------
+        parameters : Sequence
+            Parameters of the wave function: nn_r, nn_phi, reference
+
+        Returns
+        -------
+        jnp.ndarray
+            Serialized parameters
+        """
+        # nn_r
+        flat_tree = tree_util.tree_flatten(parameters[0])[0]
+        serialized_1 = jnp.reshape(flat_tree[0], (-1))
+        for params in flat_tree[1:]:
+            serialized_1 = jnp.concatenate((serialized_1, jnp.reshape(params, -1)))
+
+        # nn_phi
+        flat_tree = tree_util.tree_flatten(parameters[1])[0]
+        serialized_2 = jnp.reshape(flat_tree[0], (-1))
+        for params in flat_tree[1:]:
+            serialized_2 = jnp.concatenate((serialized_2, jnp.reshape(params, -1)))
+
+        serialized = jnp.concatenate(
+            (serialized_1, serialized_2, self.reference.serialize(parameters[2]))
+        )
+        return serialized
+
+    def update_parameters(self, parameters: Sequence, update: jnp.ndarray) -> Sequence:
+        """
+        Update the parameters of the wave function
+
+        Parameters
+        ----------
+        parameters : Sequence
+            Parameters of the wave function
+        update : jnp.ndarray
+            Update to the parameters
+
+        Returns
+        -------
+        Sequence
+            Updated parameters
+        """
+        flat_tree, tree = tree_util.tree_flatten(parameters[0])
+        counter = 0
+        for i in range(len(flat_tree)):
+            flat_tree[i] += self.mask[0] * update[
+                counter : counter + flat_tree[i].size
+            ].reshape(flat_tree[i].shape)
+            counter += flat_tree[i].size
+        parameters[0] = tree_util.tree_unflatten(tree, flat_tree)
+
+        flat_tree, tree = tree_util.tree_flatten(parameters[1])
+        for i in range(len(flat_tree)):
+            flat_tree[i] += self.mask[1] * update[
+                counter : counter + flat_tree[i].size
+            ].reshape(flat_tree[i].shape)
+            counter += flat_tree[i].size
+        parameters[1] = tree_util.tree_unflatten(tree, flat_tree)
+
+        parameters[2] = self.reference.update_parameters(
+            parameters[2], update[counter:]
+        )
+        return parameters
+
+    @partial(jit, static_argnums=(0, 3))
+    def calc_overlap(
+        self, walker_data: dict, parameters: Sequence, lattice: Any
+    ) -> complex:
+        """
+        Calculate the overlap of the wave function with a walker
+
+        Parameters
+        ----------
+        walker_data : dict
+            Helper data for the walker
+        parameters : Sequence
+            Parameters of the wave function
+        lattice : Lattice
+            Lattice object
+
+        Returns
+        -------
+        complex
+            Logarithm of the overlap of the wave function with the walker
+        """
+        ref_walker_data = walker_data["ref_walker_data"]
+        ref_overlap = self.reference.calc_overlap(
+            ref_walker_data, parameters[2], lattice
+        )
+        inputs = self.get_input(walker_data["walker"])
+        outputs_r = jnp.array(
+            self.nn_apply_r(parameters[0], inputs + 0.0j), dtype="complex64"
+        )
+        outputs_phi = jnp.array(
+            self.nn_apply_phi(parameters[1], inputs + 0.0j), dtype="complex64"
+        )
+        nn_overlap = outputs_r[0] + 1.0j * jnp.sum(outputs_phi)
+        return ref_overlap + nn_overlap
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_ratio(
+        self,
+        walker_data: dict,
+        excitation: jnp.ndarray,
+        parameters: Sequence,
+        lattice: Any,
+    ) -> complex:
+        """
+        Calculate the overlap ratio of the wave function with a walker after a single electronic excitation
+
+        Parameters
+        ----------
+        walker_data : dict
+            Helper data for the walker
+        excitation : jnp.ndarray
+            Excitation to be performed on the walker (sigma, i, a) for i,sigma -> a,sigma
+        parameters : Sequence
+            Parameters of the wave function
+        lattice : Lattice
+            Lattice object
+
+        Returns
+        -------
+        complex
+            overlap ratio of the wave function with the walker after the excitation
+        """
+        ref_walker_data = walker_data["ref_walker_data"]
+        ref_overlap_ratio = self.reference.calc_overlap_ratio(
+            ref_walker_data, excitation, parameters[2], lattice
+        )
+        return ref_overlap_ratio
+
+    @partial(jit, static_argnums=(0, 3))
+    def calc_overlap_gradient(
+        self, walker_data: dict, parameters: Sequence, lattice: Any
+    ) -> jnp.ndarray:
+        """
+        Calculate the gradient of the logarithm of the overlap of the wave function with the walker with respect to the parameters
+
+        Parameters
+        ----------
+        walker_data : dict
+            Helper data for the walker
+        parameters : Sequence
+            Parameters of the wave function
+        lattice : Lattice
+            Lattice object
+
+        Returns
+        -------
+        jnp.ndarray
+            Gradient of the log overlap
+        """
+        _, grad_fun = vjp(self.calc_overlap, walker_data, parameters, lattice)
+        gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[1]
+        gradient = self.serialize(gradient)
+        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient
+
+    def __hash__(self):
+        return hash(
+            (
+                self.nn_apply_r,
+                self.nn_apply_phi,
+                self.reference,
+                self.n_parameters,
+                self.mask,
+                self.get_input,
+            )
+        )
 
 
 if __name__ == "__main__":
