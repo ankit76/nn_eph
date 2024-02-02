@@ -154,8 +154,12 @@ def driver(
                 # update = momentum * update + step_size * ene_gradient
 
             new_parameters = wave.update_parameters(parameters, -update)
-            with open("parameters.bin", "wb") as fh:
-                pickle.dump(new_parameters, fh)
+            if iteration > 0:
+                with open("parameters.bin", "ab") as fh:
+                    pickle.dump(new_parameters, fh)
+            else:
+                with open("parameters.bin", "wb") as fh:
+                    pickle.dump(new_parameters, fh)
 
             if iteration > 0.8 * n_steps:
                 if total_energy[0] < min_energy:
@@ -255,6 +259,99 @@ def driver(
     lowest_energy = comm.bcast(lowest_energy, root=0)
 
     return lowest_energy, parameters
+
+
+def driver_corr(
+    walker,
+    ham,
+    parameters,
+    wave,
+    lattice,
+    sampler,
+    seed=0,
+    print_stats=True,
+    dev_thresh_fac=1.0e6,
+):
+    key = random.PRNGKey(seed + rank)
+
+    # dev_thresh_fac = 1.0e6
+    key, subkey = random.split(key)
+    random_numbers = random.uniform(subkey, shape=(sampler.n_samples,))
+    (
+        weight,
+        energy,
+        qp_weight,
+        ke,
+        phonon_numbers,
+        eph_corr,
+        phonon_pos,
+        energies,
+        qp_weights,
+        weights,
+    ) = sampler.sampling(
+        walker, ham, parameters, wave, lattice, random_numbers, dev_thresh_fac
+    )
+
+    # average
+    weight = np.array([weight], dtype="float32")
+    energy = np.array([weight * energy], dtype="float32")
+    qp_weight = np.array([weight * qp_weight], dtype="float32")
+    ke = np.array([weight * ke], dtype="float32")
+    phonon_numbers = np.array(weight * phonon_numbers, dtype="float32")
+    eph_corr = np.array(weight * eph_corr, dtype="float32")
+    phonon_pos = np.array([weight * phonon_pos], dtype="float32")
+    # energy = np.array([ energy ])
+    total_weight = 0.0 * weight
+    total_energy = 0.0 * weight
+    total_qp_weight = 0.0 * weight
+    total_ke = 0.0 * weight
+    total_phonon_numbers = 0.0 * phonon_numbers
+    total_eph_corr = 0.0 * eph_corr
+    total_phonon_pos = 0.0 * phonon_pos
+
+    comm.barrier()
+    comm.Reduce([weight, MPI.FLOAT], [total_weight, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([energy, MPI.FLOAT], [total_energy, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce(
+        [qp_weight, MPI.FLOAT], [total_qp_weight, MPI.FLOAT], op=MPI.SUM, root=0
+    )
+    comm.Reduce([ke, MPI.FLOAT], [total_ke, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce(
+        [phonon_numbers, MPI.FLOAT],
+        [total_phonon_numbers, MPI.FLOAT],
+        op=MPI.SUM,
+        root=0,
+    )
+    comm.Reduce([eph_corr, MPI.FLOAT], [total_eph_corr, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce(
+        [phonon_pos, MPI.FLOAT], [total_phonon_pos, MPI.FLOAT], op=MPI.SUM, root=0
+    )
+    comm.barrier()
+
+    if rank == 0:
+        total_energy /= total_weight
+        total_qp_weight /= total_weight
+        total_ke /= total_weight
+        total_phonon_numbers /= total_weight
+        total_eph_corr /= total_weight
+        total_phonon_pos /= total_weight
+
+        np.savetxt("phonon_numbers.dat", total_phonon_numbers)
+        np.savetxt("eph_corr.dat", total_eph_corr)
+
+    comm.barrier()
+    total_energy = comm.bcast(total_energy, root=0)
+    total_qp_weight = comm.bcast(total_qp_weight, root=0)
+    total_ke = comm.bcast(total_ke, root=0)
+    total_phonon_pos = comm.bcast(total_phonon_pos, root=0)
+    comm.barrier()
+
+    return (
+        total_energy,
+        total_qp_weight,
+        total_ke,
+        total_phonon_pos[0],
+    )
 
 
 def driver_sr(

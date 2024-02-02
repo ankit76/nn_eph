@@ -250,8 +250,18 @@ class kq_ne_np:
             )
             + 0.0j
         )
-        qc = tuple([jnp.zeros(len(lattice.sites), dtype=jnp.int32) for _ in range(3)])
-        qd = tuple([jnp.zeros(len(lattice.sites), dtype=jnp.int32) for _ in range(3)])
+        qc = tuple(
+            [
+                jnp.zeros(len(lattice.sites), dtype=jnp.int32)
+                for _ in range(len(lattice.shape))
+            ]
+        )
+        qd = tuple(
+            [
+                jnp.zeros(len(lattice.sites), dtype=jnp.int32)
+                for _ in range(len(lattice.shape))
+            ]
+        )
         [energy, ratios, qc, qd], _ = lax.scan(
             outer_scanned_fun,
             [energy, ratios, qc, qd],
@@ -306,6 +316,76 @@ class holstein:
     omega: float
     g: float
     max_n_phonons: any = jnp.inf
+
+    @partial(jit, static_argnums=(0, 3, 4))
+    def local_correlation_functions(self, walker, parameters, wave, lattice):
+        elec_pos = walker[0]
+        phonon_occ = walker[1]
+        overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
+
+        # ke
+        # carry: [ energy ]
+        def scanned_fun(carry, x):
+            new_overlap = wave.calc_overlap(tuple(x), phonon_occ, parameters, lattice)
+            ratio = jnp.exp(new_overlap - overlap)
+            carry[0] -= ratio
+            return carry, ratio
+
+        ke = 0.0j
+        [ke], _ = lax.scan(scanned_fun, [ke], lattice.get_nearest_neighbors(elec_pos))
+
+        # phonon_numbers
+        phonon_numbers = phonon_occ.copy()
+
+        # e_ph correlation
+        # shift phonon_occ by elec_pos
+        input_ar = phonon_occ.reshape(-1, *lattice.shape)
+        for ax in range(len(lattice.shape)):
+            for phonon_type in range(phonon_occ.shape[0]):
+                input_ar = input_ar.at[phonon_type].set(
+                    input_ar[phonon_type].take(
+                        elec_pos[ax] + jnp.arange(lattice.shape[ax]),
+                        axis=ax,
+                        mode="wrap",
+                    )
+                )
+        shifted_phonon_occ = jnp.stack([*input_ar], axis=-1).reshape(phonon_occ.shape)
+
+        # calculate local phonon position at each site
+        # carry: [ counter ]
+        def scanned_fun(carry, x):
+            pos = tuple(x)
+            phonon_pos = 0.0j
+
+            new_phonon_occ = shifted_phonon_occ.at[pos].add(1)
+            ratio = (
+                (jnp.sum(shifted_phonon_occ) < self.max_n_phonons)
+                * jnp.exp(
+                    wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice)
+                    - overlap
+                )
+                / (shifted_phonon_occ[pos] + 1) ** 0.5
+            )
+            phonon_pos += (shifted_phonon_occ[pos] + 1) ** 0.5 * ratio
+
+            new_phonon_occ = shifted_phonon_occ.at[pos].add(-1)
+            new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
+            ratio = (shifted_phonon_occ[pos]) ** 0.5 * jnp.exp(
+                wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice)
+                - overlap
+            )
+            phonon_pos += (shifted_phonon_occ[pos]) ** 0.5 * ratio
+
+            carry[0] = carry[0] + 1
+            return carry, phonon_pos
+
+        counter = 0
+        _, pos_corr = lax.scan(scanned_fun, [counter], jnp.array(lattice.sites))
+        pos_corr = pos_corr.reshape(shifted_phonon_occ.shape)
+
+        average_phonon_pos = jnp.average(pos_corr)
+
+        return ke, phonon_numbers, pos_corr, average_phonon_pos
 
     @partial(jit, static_argnums=(0, 3, 4))
     def local_energy_and_update(self, walker, parameters, wave, lattice, random_number):
@@ -536,6 +616,77 @@ class bond_ssh:
     omega: float
     g: float
     max_n_phonons: any = jnp.inf
+
+    @partial(jit, static_argnums=(0, 3, 4))
+    def local_correlation_functions(self, walker, parameters, wave, lattice):
+        elec_pos = walker[0]
+        phonon_occ = walker[1]
+        overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
+
+        # ke
+        # carry: [ energy ]
+        def scanned_fun(carry, x):
+            new_overlap = wave.calc_overlap(tuple(x), phonon_occ, parameters, lattice)
+            ratio = jnp.exp(new_overlap - overlap)
+            carry[0] -= ratio
+            return carry, ratio
+
+        ke = 0.0j
+        [ke], _ = lax.scan(scanned_fun, [ke], lattice.get_nearest_neighbors(elec_pos))
+
+        # phonon_numbers
+        phonon_numbers = phonon_occ[0].copy()
+
+        # e_ph correlation
+        # shift phonon_occ by elec_pos
+        input_ar = phonon_occ.reshape(-1, *lattice.shape)
+        for ax in range(len(lattice.shape)):
+            for phonon_type in range(phonon_occ.shape[0]):
+                input_ar = input_ar.at[phonon_type].set(
+                    input_ar[phonon_type].take(
+                        elec_pos[ax] + jnp.arange(lattice.shape[ax]),
+                        axis=ax,
+                        mode="wrap",
+                    )
+                )
+        # shifted_phonon_occ = jnp.stack([*input_ar], axis=-1)
+        shifted_phonon_occ = input_ar
+
+        # calculate local phonon position at each site
+        # carry: [ counter ]
+        def scanned_fun(carry, x):
+            pos = tuple(x)
+            phonon_pos = 0.0j
+
+            new_phonon_occ = shifted_phonon_occ.at[0, *pos].add(1)
+            ratio = (
+                (jnp.sum(shifted_phonon_occ) < self.max_n_phonons)
+                * jnp.exp(
+                    wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice)
+                    - overlap
+                )
+                / (shifted_phonon_occ[0, *pos] + 1) ** 0.5
+            )
+            phonon_pos += (shifted_phonon_occ[0, *pos] + 1) ** 0.5 * ratio
+
+            new_phonon_occ = shifted_phonon_occ.at[0, *pos].add(-1)
+            new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
+            ratio = (shifted_phonon_occ[0, *pos]) ** 0.5 * jnp.exp(
+                wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice)
+                - overlap
+            )
+            phonon_pos += (shifted_phonon_occ[0, *pos]) ** 0.5 * ratio
+
+            carry[0] = carry[0] + 1
+            return carry, phonon_pos
+
+        counter = 0
+        _, pos_corr = lax.scan(scanned_fun, [counter], jnp.array(lattice.sites))
+        pos_corr = pos_corr.reshape(lattice.shape)
+
+        average_phonon_pos = jnp.average(pos_corr)
+
+        return ke, phonon_numbers, pos_corr, average_phonon_pos
 
     @partial(jit, static_argnums=(0, 3, 4))
     def local_energy_and_update(self, walker, parameters, wave, lattice, random_number):

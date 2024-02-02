@@ -212,6 +212,133 @@ class continuous_time:
 
 
 @dataclass
+class continuous_time_corr:
+    n_eql: int
+    n_samples: int
+
+    @partial(jit, static_argnums=(0, 2, 4, 5))
+    def sampling(
+        self,
+        walker,
+        ham,
+        parameters,
+        wave,
+        lattice,
+        random_numbers,
+        dev_thresh_fac=100.0,
+    ):
+        # carry : [ walker, weight, energy, qp_weight, ke, phonon_numbers, eph_corr, phonon_pos, dev_thresh, median_energy ]
+        def scanned_fun(carry, x):
+            ke, phonon_numbers, eph_corr, phonon_pos = ham.local_correlation_functions(
+                carry[0], parameters, wave, lattice
+            )
+            (
+                energy,
+                qp_weight,
+                _,
+                weight,
+                carry[0],
+                _,
+            ) = ham.local_energy_and_update(
+                carry[0], parameters, wave, lattice, random_numbers[x]
+            )
+            weight = (jnp.abs(energy - carry[-1]) < carry[-2]) * weight + 1.0e-8
+            energy = jnp.where(weight > 1.0e-8, energy, carry[-1])
+            carry[1] += weight
+            carry[2] += weight * (jnp.real(energy) - carry[2]) / carry[1]
+            carry[3] += weight * (jnp.real(qp_weight) - carry[3]) / carry[1]
+            carry[4] += weight * (jnp.real(ke) - carry[4]) / carry[1]
+            carry[5] += weight * (phonon_numbers - carry[5]) / carry[1]
+            carry[6] += weight * (jnp.real(eph_corr) - carry[6]) / carry[1]
+            carry[7] += weight * (jnp.real(phonon_pos) - carry[7]) / carry[1]
+            return carry, (jnp.real(energy), qp_weight, weight)
+
+        weight = 0.0
+        energy = 0.0
+        qp_weight = 0.0
+        ke = 0.0
+        phonon_numbers = jnp.zeros(lattice.shape)
+        eph_corr = 0.0 * phonon_numbers
+        phonon_pos = 0.0
+        [walker, _, _, _, _, _, _, _, _, _], (energies_eq, _, _) = lax.scan(
+            scanned_fun,
+            [
+                walker,
+                weight,
+                energy,
+                qp_weight,
+                ke,
+                phonon_numbers,
+                eph_corr,
+                phonon_pos,
+                jnp.inf,
+                0.0,
+            ],
+            jnp.arange(self.n_eql),
+        )
+
+        median_energy = jnp.median(energies_eq)
+        d = jnp.abs(energies_eq - median_energy)
+        mdev = jnp.median(d) + 1.0e-4
+
+        weight = 0.0
+        energy = 0.0
+        qp_weight = 0.0
+        ke = 0.0
+        phonon_numbers = jnp.zeros(lattice.shape)
+        eph_corr = 0.0 * phonon_numbers
+        phonon_pos = 0.0
+        [
+            _,
+            weight,
+            energy,
+            qp_weight,
+            ke,
+            phonon_numbers,
+            eph_corr,
+            phonon_pos,
+            _,
+            _,
+        ], (
+            energies,
+            qp_weights,
+            weights,
+        ) = lax.scan(
+            scanned_fun,
+            [
+                walker,
+                weight,
+                energy,
+                qp_weight,
+                ke,
+                phonon_numbers,
+                eph_corr,
+                phonon_pos,
+                dev_thresh_fac * mdev,
+                median_energy,
+            ],
+            jnp.arange(self.n_samples),
+        )
+
+        # energy, gradient, lene_gradient are weighted
+        return (
+            weight,
+            energy,
+            qp_weight,
+            ke,
+            phonon_numbers,
+            eph_corr,
+            phonon_pos,
+            energies,
+            qp_weights,
+            weights,
+        )
+
+    def __hash__(self):
+        return hash((self.n_eql, self.n_samples))
+
+
+@dataclass
 class continuous_time_sr:
     n_eql: int
     n_samples: int
