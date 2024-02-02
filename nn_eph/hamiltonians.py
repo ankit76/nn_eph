@@ -658,24 +658,24 @@ class bond_ssh:
             pos = tuple(x)
             phonon_pos = 0.0j
 
-            new_phonon_occ = shifted_phonon_occ.at[0, *pos].add(1)
+            new_phonon_occ = shifted_phonon_occ.at[(0, *pos)].add(1)
             ratio = (
                 (jnp.sum(shifted_phonon_occ) < self.max_n_phonons)
                 * jnp.exp(
                     wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice)
                     - overlap
                 )
-                / (shifted_phonon_occ[0, *pos] + 1) ** 0.5
+                / (shifted_phonon_occ[(0, *pos)] + 1) ** 0.5
             )
-            phonon_pos += (shifted_phonon_occ[0, *pos] + 1) ** 0.5 * ratio
+            phonon_pos += (shifted_phonon_occ[(0, *pos)] + 1) ** 0.5 * ratio
 
-            new_phonon_occ = shifted_phonon_occ.at[0, *pos].add(-1)
+            new_phonon_occ = shifted_phonon_occ.at[(0, *pos)].add(-1)
             new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
-            ratio = (shifted_phonon_occ[0, *pos]) ** 0.5 * jnp.exp(
+            ratio = (shifted_phonon_occ[(0, *pos)]) ** 0.5 * jnp.exp(
                 wave.calc_overlap(elec_pos, new_phonon_occ, parameters, lattice)
                 - overlap
             )
-            phonon_pos += (shifted_phonon_occ[0, *pos]) ** 0.5 * ratio
+            phonon_pos += (shifted_phonon_occ[(0, *pos)]) ** 0.5 * ratio
 
             carry[0] = carry[0] + 1
             return carry, phonon_pos
