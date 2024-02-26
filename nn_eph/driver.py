@@ -4,9 +4,9 @@ import time
 
 import numpy as np
 
-os.environ[
-    "XLA_FLAGS"
-] = "--xla_force_host_platform_device_count=1 --xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1"
+os.environ["XLA_FLAGS"] = (
+    "--xla_force_host_platform_device_count=1 --xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1"
+)
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 import pickle
 from functools import partial
@@ -512,6 +512,108 @@ def driver_sr(
 
     mean_energy = comm.bcast(mean_energy, root=0)
     return mean_energy, parameters
+
+
+def driver_lr(
+    walker,
+    ham,
+    parameters,
+    wave,
+    lattice,
+    sampler,
+    seed=0,
+    print_stats=True,
+    dev_thresh_fac=1.0e6,
+):
+    key = random.PRNGKey(seed + rank)
+
+    # dev_thresh_fac = 1.0e6
+    key, subkey = random.split(key)
+    random_numbers = random.uniform(subkey, shape=(sampler.n_samples,))
+    # g_scan = g #* (1 - jnp.exp(-iteration / 10))
+    # starter_iters = 100
+    # if iteration < starter_iters:
+    #  g_scan = 0.
+    # else:
+    #  g_scan = g * (1. - jnp.exp(-(iteration - starter_iters) / 500))
+    # g_scan = 6. - (6. - g) * (1. - jnp.exp(-(iteration - starter_iters) / 500))
+    (
+        weight,
+        energy,
+        gradient,
+        lene_gradient,
+        qp_weight,
+        metric,
+        h,
+        energies,
+        qp_weights,
+        weights,
+    ) = sampler.sampling_lr(
+        walker, ham, parameters, wave, lattice, random_numbers, dev_thresh_fac
+    )
+    # return metric, h
+
+    # reject outliers
+    # samples_clean, clean_ind = stat_utils.reject_outliers(
+    #     np.stack((energies, qp_weights, weights)).T, 0, dev_thresh_fac / 100.0
+    # )
+    # energies_clean = samples_clean[:, 0]
+    # qp_weights_clean = samples_clean[:, 1]
+    # weights_clean = samples_clean[:, 2]
+    # weight = np.sum(weights_clean)
+    # energy = np.average(energies_clean, weights=weights_clean)
+    # qp_weight = np.average(qp_weights_clean, weights=weights_clean)
+
+    # average and print energies for the current step
+    weight = np.array([weight], dtype="float32")
+    energy = np.array([weight * energy], dtype="float32")
+    qp_weight = np.array([weight * qp_weight], dtype="float32")
+    # energy = np.array([ energy ])
+    total_weight = 0.0 * weight
+    total_energy = 0.0 * weight
+    total_qp_weight = 0.0 * weight
+    # gradient = np.array(weight * gradient, dtype="float32")
+    # lene_gradient = np.array(weight * lene_gradient, dtype="float32")
+    metric = np.array(weight * metric, dtype="float32")
+    h = np.array(weight * h, dtype="float32")
+    # gradient = np.array(gradient)
+    # lene_gradient = np.array(lene_gradient)
+    total_metric = 0.0 * metric
+    total_h = 0.0 * h
+
+    comm.barrier()
+    comm.Reduce([weight, MPI.FLOAT], [total_weight, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([energy, MPI.FLOAT], [total_energy, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce(
+        [qp_weight, MPI.FLOAT], [total_qp_weight, MPI.FLOAT], op=MPI.SUM, root=0
+    )
+    comm.Reduce([metric, MPI.FLOAT], [total_metric, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce(
+        [h, MPI.FLOAT],
+        [total_h, MPI.FLOAT],
+        op=MPI.SUM,
+        root=0,
+    )
+    comm.barrier()
+
+    if rank == 0:
+        total_energy /= total_weight
+        total_qp_weight /= total_weight
+        total_metric /= total_weight
+        total_h /= total_weight
+        print(f"energy: {total_energy / total_metric[0,0]}")
+
+        # print(f'iter: {iteration: 5d}, ene: {total_energy[0]: .6e}, qp_weight: {total_qp_weight[0]: .6e}, grad: {jnp.linalg.nor(ene_gradient): .6e}')
+        # print(f'total_weight: {total_weight}')
+        # print(f'total_energy: {total_energy}')
+        # print(f'total_gradient: {total_gradient}')
+
+    comm.barrier()
+    total_h = comm.bcast(total_h, root=0)
+    total_metric = comm.bcast(total_metric, root=0)
+    comm.barrier()
+
+    return total_metric, total_h
 
 
 if __name__ == "__main__":

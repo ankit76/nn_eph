@@ -10,7 +10,7 @@ from typing import Any, Sequence
 # os.environ['JAX_ENABLE_X64'] = 'True'
 from jax import jit, lax
 from jax import numpy as jnp
-from jax import random, tree_util
+from jax import random, tree_util, vjp
 
 
 @dataclass
@@ -118,6 +118,7 @@ class continuous_time_1:
 class continuous_time:
     n_eql: int
     n_samples: int
+    green_reweight: bool = True
 
     @partial(jit, static_argnums=(0, 2, 4, 5))
     def sampling(
@@ -202,6 +203,190 @@ class continuous_time:
             gradient,
             lene_gradient,
             qp_weight,
+            energies,
+            qp_weights,
+            weights,
+        )
+
+    @partial(jit, static_argnums=(0, 2, 4, 5))
+    def sampling_lr(
+        self,
+        walker,
+        ham,
+        parameters,
+        wave,
+        lattice,
+        random_numbers,
+        dev_thresh_fac=100.0,
+    ):
+        def _local_energy_and_update_wrapper(x, y, z):
+            if self.green_reweight:
+                energy, qp_weight, gradient, weight, walker, overlap = (
+                    ham.local_energy_and_update_lr(x, y, wave, lattice, z)
+                )
+            else:
+                energy, qp_weight, gradient, weight, walker, overlap = (
+                    ham.local_energy_and_update(x, y, wave, lattice, z)
+                )
+            return energy, (qp_weight, gradient, weight, walker, overlap)
+
+        # carry : [ walker, weight, energy, grad, lene_grad, qp_weight, dev_thresh, median_energy ]
+        def scanned_fun(carry, x):
+            (
+                energy,
+                (
+                    qp_weight,
+                    gradient,
+                    weight,
+                    carry[0],
+                    overlap,
+                ),
+            ) = _local_energy_and_update_wrapper(
+                carry[0], parameters, random_numbers[x]
+            )
+            weight = (jnp.abs(energy - carry[7]) < carry[6]) * weight + 1.0e-8
+            energy = jnp.where(weight > 1.0e-8, energy, carry[7])
+            carry[1] += weight
+            z_n = (
+                jnp.abs(overlap) ** 2
+                + self.green_reweight * (jnp.abs(gradient * overlap) ** 2).sum()
+            ).real
+            # z_n = jnp.abs(overlap) ** 2
+            carry[2] += (
+                weight
+                * (jnp.real(energy * jnp.abs(overlap) ** 2 / z_n) - carry[2])
+                / carry[1]
+            )
+            carry[3] = carry[3] + weight * (jnp.real(gradient) - carry[3]) / carry[1]
+            carry[4] = (
+                carry[4]
+                + weight
+                * (jnp.real(jnp.conjugate(energy) * gradient) - carry[4])
+                / carry[1]
+            )
+            carry[5] += weight * (jnp.real(qp_weight) - carry[5]) / carry[1]
+            return carry, (jnp.real(energy), qp_weight, weight)
+
+        weight = 0.0
+        energy = 0.0
+        gradient = jnp.zeros(wave.n_parameters)
+        lene_gradient = jnp.zeros(wave.n_parameters)
+        qp_weight = 0.0
+        [walker, _, _, _, _, _, _, _], (energies_eq, _, _) = lax.scan(
+            scanned_fun,
+            [walker, weight, energy, gradient, lene_gradient, qp_weight, jnp.inf, 0.0],
+            jnp.arange(self.n_eql),
+        )
+
+        median_energy = jnp.median(energies_eq)
+        d = jnp.abs(energies_eq - median_energy)
+        mdev = jnp.median(d) + 1.0e-4
+
+        # carry : [ walker, weight, energy, grad, lene_grad, qp_weight, metric, h, dev_thresh, median_energy ]
+        def scanned_fun_g(carry, x):
+            energy, grad_fun, (qp_weight, gradient, weight, carry[0], overlap) = vjp(
+                _local_energy_and_update_wrapper,
+                carry[0],
+                parameters,
+                random_numbers[x],
+                has_aux=True,
+            )
+            ene_grad = wave.serialize(grad_fun(1.0 + 0.0j)[1])
+            # extended vectors
+            ext_gradient = jnp.zeros(wave.n_parameters + 1) + 0.0j
+            ext_gradient = ext_gradient.at[1:].set(gradient)
+            ext_gradient = ext_gradient.at[0].set(1.0)
+            ext_ene_grad = jnp.zeros(wave.n_parameters + 1) + 0.0j
+            ext_ene_grad = ext_ene_grad.at[1:].set(ene_grad)
+            # ext_ene_grad = ext_ene_grad.at[0].set(energy)
+            gradient = ext_gradient
+            ene_grad = ext_ene_grad
+            weight = (jnp.abs(energy - carry[9]) < carry[8]) * weight + 1.0e-8
+            z_n = (
+                jnp.abs(overlap) ** 2
+                + self.green_reweight * (jnp.abs(gradient * overlap) ** 2).sum()
+            ).real
+            # z_n = jnp.abs(overlap) ** 2
+            energy = jnp.where(weight > 1.0e-8, energy, carry[9])
+            carry[1] += weight
+            carry[2] += (
+                weight
+                * (jnp.real(energy * jnp.abs(overlap) ** 2 / z_n) - carry[2])
+                / carry[1]
+            )
+            # carry[3] = carry[3] + weight * (jnp.real(gradient) - carry[3]) / carry[1]
+            # carry[4] = (
+            #    carry[4]
+            #    + weight
+            #    * (jnp.real(jnp.conjugate(energy) * gradient) - carry[4])
+            #    / carry[1]
+            # )
+            carry[5] += weight * (jnp.real(qp_weight) - carry[5]) / carry[1]
+            carry[6] += (
+                weight
+                * (
+                    jnp.real(
+                        jnp.einsum("i,j->ij", jnp.conj(ext_gradient), ext_gradient)
+                        * jnp.abs(overlap) ** 2
+                        / z_n
+                    )
+                    - carry[6]
+                )
+                / carry[1]
+            )
+            carry[7] += (
+                weight
+                * (
+                    jnp.real(
+                        jnp.einsum(
+                            "i,j->ij", jnp.conj(gradient), ene_grad + energy * gradient
+                        )
+                        * jnp.abs(overlap) ** 2
+                        / z_n
+                    )
+                    - carry[7]
+                )
+                / carry[1]
+            )
+            return carry, (jnp.real(energy), qp_weight, weight)
+
+        weight = 0.0
+        energy = 0.0
+        gradient = jnp.zeros(wave.n_parameters + 1)
+        lene_gradient = jnp.zeros(wave.n_parameters + 1)
+        metric = jnp.zeros((wave.n_parameters + 1, wave.n_parameters + 1))
+        h = jnp.zeros((wave.n_parameters + 1, wave.n_parameters + 1))
+        qp_weight = 0.0
+        [_, weight, energy, gradient, lene_gradient, qp_weight, metric, h, _, _], (
+            energies,
+            qp_weights,
+            weights,
+        ) = lax.scan(
+            scanned_fun_g,
+            [
+                walker,
+                weight,
+                energy,
+                gradient,
+                lene_gradient,
+                qp_weight,
+                metric,
+                h,
+                dev_thresh_fac * mdev,
+                median_energy,
+            ],
+            jnp.arange(self.n_samples),
+        )
+
+        # energy, gradient, lene_gradient are weighted
+        return (
+            weight,
+            energy,
+            gradient,
+            lene_gradient,
+            qp_weight,
+            metric,
+            h,
             energies,
             qp_weights,
             weights,
