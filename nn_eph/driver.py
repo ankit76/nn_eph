@@ -526,6 +526,7 @@ def driver_lr(
     dev_thresh_fac=1.0e6,
 ):
     key = random.PRNGKey(seed + rank)
+    walker_0 = walker.copy()
 
     # dev_thresh_fac = 1.0e6
     key, subkey = random.split(key)
@@ -595,7 +596,7 @@ def driver_lr(
         root=0,
     )
     comm.barrier()
-
+    k_vec = None
     if rank == 0:
         total_energy /= total_weight
         total_qp_weight /= total_weight
@@ -603,6 +604,18 @@ def driver_lr(
         total_h /= total_weight
         print(f"energy: {total_energy / total_metric[0,0]}")
 
+        total_h = (total_h + total_h.T.conj()) / 2
+        overlap = wave.calc_overlap(walker_0[0], walker_0[1], parameters, lattice)
+        grad = wave.calc_overlap_gradient(walker_0[0], walker_0[1], parameters, lattice)
+        ext_grad = jnp.zeros(wave.n_parameters + 1) + 0.0j
+        ext_grad = ext_grad.at[0].set(1)
+        ext_grad = ext_grad.at[1:].set(grad)
+        k_vec = ext_grad * jnp.exp(overlap)
+
+        pos_ind = total_metric.diagonal() > 0
+        total_metric = total_metric[pos_ind][:, pos_ind]
+        total_h = total_h[pos_ind][:, pos_ind]
+        k_vec = k_vec[pos_ind]
         # print(f'iter: {iteration: 5d}, ene: {total_energy[0]: .6e}, qp_weight: {total_qp_weight[0]: .6e}, grad: {jnp.linalg.nor(ene_gradient): .6e}')
         # print(f'total_weight: {total_weight}')
         # print(f'total_energy: {total_energy}')
@@ -611,9 +624,10 @@ def driver_lr(
     comm.barrier()
     total_h = comm.bcast(total_h, root=0)
     total_metric = comm.bcast(total_metric, root=0)
+    k_vec = comm.bcast(k_vec, root=0)
     comm.barrier()
 
-    return total_metric, total_h
+    return total_metric, total_h, k_vec
 
 
 if __name__ == "__main__":
