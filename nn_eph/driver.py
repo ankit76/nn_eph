@@ -575,8 +575,8 @@ def driver_lr(
     total_qp_weight = 0.0 * weight
     # gradient = np.array(weight * gradient, dtype="float32")
     # lene_gradient = np.array(weight * lene_gradient, dtype="float32")
-    metric = np.array(weight * metric, dtype="float32")
-    h = np.array(weight * h, dtype="float32")
+    metric = np.array(weight * metric)  # , dtype="complex64")
+    h = np.array(weight * h)  # , dtype="complex64")
     # gradient = np.array(gradient)
     # lene_gradient = np.array(lene_gradient)
     total_metric = 0.0 * metric
@@ -588,13 +588,15 @@ def driver_lr(
     comm.Reduce(
         [qp_weight, MPI.FLOAT], [total_qp_weight, MPI.FLOAT], op=MPI.SUM, root=0
     )
-    comm.Reduce([metric, MPI.FLOAT], [total_metric, MPI.FLOAT], op=MPI.SUM, root=0)
-    comm.Reduce(
-        [h, MPI.FLOAT],
-        [total_h, MPI.FLOAT],
-        op=MPI.SUM,
-        root=0,
-    )
+    # comm.Reduce([metric, MPI.FLOAT], [total_metric, MPI.FLOAT], op=MPI.SUM, root=0)
+    # comm.Reduce(
+    #     [h, MPI.FLOAT],
+    #     [total_h, MPI.FLOAT],
+    #     op=MPI.SUM,
+    #     root=0,
+    # )
+    total_metric = comm.reduce(metric, op=MPI.SUM, root=0)
+    total_h = comm.reduce(h, op=MPI.SUM, root=0)
     comm.barrier()
     k_vec = None
     if rank == 0:
@@ -612,7 +614,7 @@ def driver_lr(
         ext_grad = ext_grad.at[1:].set(grad)
         k_vec = ext_grad * jnp.exp(overlap)
 
-        pos_ind = total_metric.diagonal() > 0
+        pos_ind = total_metric.diagonal().real > 0
         total_metric = total_metric[pos_ind][:, pos_ind]
         total_h = total_h[pos_ind][:, pos_ind]
         k_vec = k_vec[pos_ind]

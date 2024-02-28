@@ -325,7 +325,7 @@ class continuous_time:
             carry[6] += (
                 weight
                 * (
-                    jnp.real(
+                    (
                         jnp.einsum("i,j->ij", jnp.conj(ext_gradient), ext_gradient)
                         * jnp.abs(overlap) ** 2
                         / z_n
@@ -337,7 +337,7 @@ class continuous_time:
             carry[7] += (
                 weight
                 * (
-                    jnp.real(
+                    (
                         jnp.einsum(
                             "i,j->ij", jnp.conj(gradient), ene_grad + energy * gradient
                         )
@@ -354,8 +354,8 @@ class continuous_time:
         energy = 0.0
         gradient = jnp.zeros(wave.n_parameters + 1)
         lene_gradient = jnp.zeros(wave.n_parameters + 1)
-        metric = jnp.zeros((wave.n_parameters + 1, wave.n_parameters + 1))
-        h = jnp.zeros((wave.n_parameters + 1, wave.n_parameters + 1))
+        metric = jnp.zeros((wave.n_parameters + 1, wave.n_parameters + 1)) + 0.0j
+        h = jnp.zeros((wave.n_parameters + 1, wave.n_parameters + 1)) + 0.0j
         qp_weight = 0.0
         [_, weight, energy, gradient, lene_gradient, qp_weight, metric, h, _, _], (
             energies,
