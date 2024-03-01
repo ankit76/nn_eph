@@ -575,6 +575,17 @@ def driver_lr(
     total_qp_weight = 0.0 * weight
     # gradient = np.array(weight * gradient, dtype="float32")
     # lene_gradient = np.array(weight * lene_gradient, dtype="float32")
+
+    # throw away zero norm vectors in the metric
+    pos_ind = metric.diagonal().real > 0
+    print(f"pos_ind: {pos_ind.size}, metric: {metric.shape}, h: {h.shape}")
+    comm.barrier()
+    pos_ind = comm.bcast(pos_ind, root=0)
+    comm.barrier()
+    metric = metric[pos_ind][:, pos_ind]
+    h = h[pos_ind][:, pos_ind]
+    print(f"pos_ind: {pos_ind.size}, metric: {metric.shape}, h: {h.shape}")
+
     metric = np.array(weight * metric)  # , dtype="complex64")
     h = np.array(weight * h)  # , dtype="complex64")
     # gradient = np.array(gradient)
@@ -614,9 +625,9 @@ def driver_lr(
         ext_grad = ext_grad.at[1:].set(grad)
         k_vec = ext_grad * jnp.exp(overlap)
 
-        pos_ind = total_metric.diagonal().real > 0
-        total_metric = total_metric[pos_ind][:, pos_ind]
-        total_h = total_h[pos_ind][:, pos_ind]
+        # pos_ind = total_metric.diagonal().real > 0
+        # total_metric = total_metric[pos_ind][:, pos_ind]
+        # total_h = total_h[pos_ind][:, pos_ind]
         k_vec = k_vec[pos_ind]
         # print(f'iter: {iteration: 5d}, ene: {total_energy[0]: .6e}, qp_weight: {total_qp_weight[0]: .6e}, grad: {jnp.linalg.nor(ene_gradient): .6e}')
         # print(f'total_weight: {total_weight}')
