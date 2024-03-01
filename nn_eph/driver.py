@@ -578,13 +578,11 @@ def driver_lr(
 
     # throw away zero norm vectors in the metric
     pos_ind = metric.diagonal().real > 0
-    print(f"pos_ind: {pos_ind.size}, metric: {metric.shape}, h: {h.shape}")
     comm.barrier()
     pos_ind = comm.bcast(pos_ind, root=0)
     comm.barrier()
     metric = metric[pos_ind][:, pos_ind]
     h = h[pos_ind][:, pos_ind]
-    print(f"pos_ind: {pos_ind.size}, metric: {metric.shape}, h: {h.shape}")
 
     metric = np.array(weight * metric)  # , dtype="complex64")
     h = np.array(weight * h)  # , dtype="complex64")
