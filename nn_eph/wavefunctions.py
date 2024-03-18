@@ -101,6 +101,32 @@ def get_input_k_2(
 
 
 @partial(jit, static_argnums=(2,))
+def get_input_k_2_ee(
+    elec_k: List[tuple], phonon_occ: jnp.ndarray, lattice_shape: Sequence
+) -> jnp.ndarray:
+    """Makes NN input array from a bipolaron k-space walker, only uses electronic momenta
+
+    Parameters
+    ----------
+    elec_k : Sequence
+        Pair of electron momenta
+    phonon_occ : jnp.ndarray
+        Phonon occupations
+    lattice_shape : Sequence
+        Lattice shape
+
+    Returns
+    -------
+    jnp.ndarray
+        Input array
+    """
+    elec_k_ar = jnp.zeros(lattice_shape)
+    elec_k_ar = elec_k_ar.at[elec_k[0]].add(1)
+    elec_k_ar = elec_k_ar.at[elec_k[1]].add(1)
+    return elec_k_ar
+
+
+@partial(jit, static_argnums=(2,))
 def get_input_n_k(elec_n_k, phonon_occ, lattice_shape):
     elec_k_ar_0 = jnp.zeros(lattice_shape[1:])
     elec_k_ar_0 = elec_k_ar_0.at[elec_n_k[1]].set(1)
@@ -134,6 +160,182 @@ def get_input_spin_phonon(walker, lattice_shape):
 def get_input_n(walker):
     input_ar = jnp.stack([walker[0][0], walker[0][1], walker[1]], axis=-1)
     return input_ar
+
+
+@dataclass
+class sum_states:
+    states: Tuple
+    n_parameters: int = None
+
+    def __post_init__(self):
+        self.n_parameters = sum([state.n_parameters for state in self.states])
+
+    def serialize(self, parameters):
+        return jnp.concatenate(
+            [state.serialize(parameters[i]) for i, state in enumerate(self.states)]
+        )
+
+    def update_parameters(self, parameters, update):
+        update_idx = [0] + list(
+            np.cumsum([state.n_parameters for state in self.states])
+        )
+        return [
+            state.update_parameters(
+                parameters[i], update[update_idx[i] : update_idx[i + 1]]
+            )
+            for i, state in enumerate(self.states)
+        ]
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap(self, elec_pos, phonon_occ, parameters, lattice):
+        return jsp.special.logsumexp(
+            jnp.array(
+                [
+                    state.calc_overlap(elec_pos, phonon_occ, parameters[i], lattice)
+                    for i, state in enumerate(self.states)
+                ]
+            )
+        )
+
+    @partial(jit, static_argnums=(0, 6))
+    def calc_overlap_ratio(
+        self,
+        elec_pos_old,
+        elec_pos_new,
+        phonon_pos,
+        phonon_change,
+        parameters,
+        lattice,
+        overlap_old,
+        phonon_occ_new,
+    ):
+        overlap_new = self.calc_overlap(
+            elec_pos_new, phonon_occ_new, parameters, lattice
+        )
+        return jnp.exp(overlap_new - overlap_old)
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
+        return jnp.sum(
+            [
+                state.calc_overlap_map(elec_pos, phonon_occ, parameters[i], lattice)
+                for i, state in enumerate(self.states)
+            ]
+        )
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+        value, grad_fun = vjp(
+            self.calc_overlap, elec_pos, phonon_occ, parameters, lattice
+        )
+        gradient = grad_fun(1.0 + 0.0j)[2]
+        gradient = self.serialize(gradient)  # / value
+        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+        overlaps = self.calc_overlap_map(elec_pos, phonon_occ, parameters, lattice)
+        return jnp.concatenate(
+            [
+                overlaps[i]
+                * state.calc_overlap_map_gradient(
+                    elec_pos, phonon_occ, parameters[i], lattice
+                )
+                for i, state in enumerate(self.states)
+            ]
+        ) / jnp.sum(overlaps)
+
+    def __hash__(self):
+        return hash(self.states)
+
+
+@dataclass
+class product_states:
+    states: Tuple
+    n_parameters: int = None
+
+    def __post_init__(self):
+        self.n_parameters = sum([state.n_parameters for state in self.states])
+
+    def serialize(self, parameters):
+        return jnp.concatenate(
+            [state.serialize(parameters[i]) for i, state in enumerate(self.states)]
+        )
+
+    def update_parameters(self, parameters, update):
+        update_idx = [0] + list(
+            np.cumsum([state.n_parameters for state in self.states])
+        )
+        return [
+            state.update_parameters(
+                parameters[i], update[update_idx[i] : update_idx[i + 1]]
+            )
+            for i, state in enumerate(self.states)
+        ]
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap(self, elec_pos, phonon_occ, parameters, lattice):
+        return jnp.sum(jnp.array(
+            [
+                state.calc_overlap(elec_pos, phonon_occ, parameters[i], lattice)
+                for i, state in enumerate(self.states)
+            ])
+        )
+
+    @partial(jit, static_argnums=(0, 6))
+    def calc_overlap_ratio(
+        self,
+        elec_pos_old,
+        elec_pos_new,
+        phonon_pos,
+        phonon_change,
+        parameters,
+        lattice,
+        overlap_old,
+        phonon_occ_new,
+    ):
+        overlap_new = self.calc_overlap(
+            elec_pos_new, phonon_occ_new, parameters, lattice
+        )
+        return jnp.exp(overlap_new - overlap_old)
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
+        return jnp.prod(
+            [
+                state.calc_overlap_map(elec_pos, phonon_occ, parameters[i], lattice)
+                for i, state in enumerate(self.states)
+            ]
+        )
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+        value, grad_fun = vjp(
+            self.calc_overlap, elec_pos, phonon_occ, parameters, lattice
+        )
+        gradient = grad_fun(1.0 + 0.0j)[2]
+        gradient = self.serialize(gradient)
+        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+        overlaps = self.calc_overlap_map(elec_pos, phonon_occ, parameters, lattice)
+        return jnp.concatenate(
+            [
+                overlaps[i]
+                * state.calc_overlap_map_gradient(
+                    elec_pos, phonon_occ, parameters[i], lattice
+                )
+                for i, state in enumerate(self.states)
+            ]
+        ) / jnp.sum(overlaps)
+
+    def __hash__(self):
+        return hash(self.states)
 
 
 @dataclass
@@ -554,6 +756,86 @@ class sc:
 
 
 @dataclass
+class sc_2:
+    n_parameters: int
+
+    def serialize(self, parameters):
+        return parameters
+
+    def update_parameters(self, parameters, update):
+        parameters += update
+        return parameters
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap(self, elec_pos, phonon_occ, parameters, lattice):
+        nk = len(lattice.sites)
+        gamma = (parameters[:nk] + 1.0j * parameters[nk : 2 * nk]).reshape(
+            *lattice.shape
+        )
+        t = parameters[2 * nk : 3 * nk] + 1.0j * parameters[3 * nk :]
+        overlap_0 = t[lattice.get_site_num(elec_pos[0])] * jnp.prod(gamma**phonon_occ)
+        overlap_1 = t[lattice.get_site_num(elec_pos[1])] * jnp.prod(gamma**phonon_occ)
+        overlap = overlap_0 * overlap_1
+        return jnp.log(overlap + 0.0j)
+
+    # fast update not implemented
+    @partial(jit, static_argnums=(0, 6))
+    def calc_overlap_ratio(
+        self,
+        elec_pos_old,
+        elec_pos_new,
+        phonon_pos,
+        phonon_change,
+        parameters,
+        lattice,
+        overlap_old,
+        phonon_occ_new,
+    ):
+        new_overlap = self.calc_overlap(
+            elec_pos_new, phonon_occ_new, parameters, lattice
+        )
+        return jnp.exp(new_overlap - overlap_old)
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
+        def scanned_fun(carry, x):
+            dist_0 = lattice.get_distance(elec_pos[0], x)
+            dist_1 = lattice.get_distance(elec_pos[1], x)
+            carry *= (parameters[dist_0] + parameters[dist_1]) ** (phonon_occ[(*x,)])
+            return carry, x
+
+        overlap = 1.0 + 0.0j
+        overlap, _ = lax.scan(scanned_fun, overlap, jnp.array(lattice.sites))
+
+        return jnp.log(overlap)
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+        parameters_c = parameters + 0.0j
+        value, grad_fun = vjp(
+            self.calc_overlap, elec_pos, phonon_occ, parameters_c, lattice
+        )
+        gradient = grad_fun(1.0 + 0.0j)[2]
+        gradient = self.serialize(gradient)  # / value
+        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_map_gradient(self, elec_pos, phonon_occ, parameters, lattice):
+        value, gradient = value_and_grad(self.calc_overlap_map, argnums=2)(
+            elec_pos, phonon_occ, parameters, lattice
+        )
+        gradient = self.serialize(gradient)
+        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
+        return gradient  # / value
+
+    def __hash__(self):
+        return hash(self.n_parameters)
+
+
+@dataclass
 class sc_k_nep:
     n_parameters: int
     n_e_bands: int
@@ -661,7 +943,7 @@ class sc_k_nep:
         return gradient  # / value
 
     def __hash__(self):
-        return hash(self.n_parameters, self.n_e_bands, self.n_p_bands)
+        return hash((self.n_parameters, self.n_e_bands, self.n_p_bands))
 
 
 @dataclass
@@ -2285,6 +2567,38 @@ if __name__ == "__main__":
 
     n_sites = 4
     lattice = lattices.one_dimensional_chain(n_sites)
+
+    wave_0 = sc(n_sites * 4)
+    wave_1 = sc(n_sites * 4)
+    wave = sum_states((wave_0, wave_1))
+    import numpy as np
+
+    parameters_0 = jnp.array(np.random.randn(n_sites * 4))
+    parameters_1 = jnp.array(np.random.randn(n_sites * 4))
+    parameters = [parameters_0, parameters_1]
+    elec_pos = (0,)
+    phonon_occ = jnp.array([2, 0, 1, 0])
+    overlap = wave.calc_overlap(elec_pos, phonon_occ, parameters, lattice)
+    print(overlap)
+
+    overlap_0 = wave_0.calc_overlap(elec_pos, phonon_occ, parameters_0, lattice)
+    overlap_1 = wave_1.calc_overlap(elec_pos, phonon_occ, parameters_1, lattice)
+    print(jnp.log(jnp.exp(overlap_0) + jnp.exp(overlap_1)))
+    np.allclose(overlap, jnp.log(jnp.exp(overlap_0) + jnp.exp(overlap_1)))
+
+    gradient = wave.calc_overlap_gradient(elec_pos, phonon_occ, parameters, lattice)
+
+    gradient_0 = wave_0.calc_overlap_gradient(
+        elec_pos, phonon_occ, parameters_0, lattice
+    )
+    gradient_1 = wave_1.calc_overlap_gradient(
+        elec_pos, phonon_occ, parameters_1, lattice
+    )
+    gradient_ref = jnp.concatenate(
+        (gradient_0 * jnp.exp(overlap_0), gradient_1 * jnp.exp(overlap_1))
+    ) / jnp.exp(overlap)
+    np.allclose(gradient, gradient_ref)
+    exit()
 
     model_r = models.MLP(
         [2, 1], param_dtype=jnp.complex64, kernel_init=models.complex_kernel_init
