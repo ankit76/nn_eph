@@ -99,6 +99,32 @@ def get_input_k_2(
     input_ar = jnp.stack([elec_k_ar, *phonon_occ.reshape(-1, *lattice_shape)], axis=-1)
     return input_ar
 
+@partial(jit, static_argnums=(2,))
+def get_input_k_2_ns(
+    elec_k: List[tuple], phonon_occ: jnp.ndarray, lattice_shape: Sequence
+) -> jnp.ndarray:
+    """Makes NN input array from a bipolaron k-space walker
+
+    Parameters
+    ----------
+    elec_k : Sequence
+        Pair of electron momenta
+    phonon_occ : jnp.ndarray
+        Phonon occupations
+    lattice_shape : Sequence
+        Lattice shape
+
+    Returns
+    -------
+    jnp.ndarray
+        Input array
+    """
+    elec_k_ar_0 = jnp.zeros(lattice_shape)
+    elec_k_ar_1 = jnp.zeros(lattice_shape)
+    elec_k_ar_0 = elec_k_ar_0.at[elec_k[0]].add(1)
+    elec_k_ar_1 = elec_k_ar_1.at[elec_k[1]].add(1)
+    input_ar = jnp.stack([elec_k_ar_0, elec_k_ar_1, *phonon_occ.reshape(-1, *lattice_shape)], axis=-1)
+    return input_ar
 
 @partial(jit, static_argnums=(2,))
 def get_input_k_2_ee(
