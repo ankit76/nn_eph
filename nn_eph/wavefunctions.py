@@ -36,9 +36,9 @@ def get_input_translate(elec_pos, phonon_occ, lattice):
     elec_k_ar = jnp.zeros(lattice.shape)
     elec_k_ar = elec_k_ar.at[elec_pos].set(1)
     input_ar = jnp.stack([elec_k_ar, *phonon_occ.reshape(-1, *lattice.shape)], axis=-1)
-    translations = vmap(lambda x: jnp.roll(input_ar, x, axis=(0,)))(
-        jnp.array(lattice.sites)
-    )
+    translations = vmap(
+        lambda x: jnp.roll(input_ar, x, axis=tuple(range(len(lattice.shape))))
+    )(jnp.array(lattice.sites))
     return translations
 
 
