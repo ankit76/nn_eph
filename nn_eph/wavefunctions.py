@@ -14,7 +14,7 @@ from jax import jit, lax
 from jax import numpy as jnp
 from jax import random
 from jax import scipy as jsp
-from jax import tree_util, value_and_grad, vjp
+from jax import tree_util, value_and_grad, vjp, vmap
 
 
 # TODO: needs to be changed for 2 sites
@@ -29,6 +29,17 @@ def get_input_r(elec_pos, phonon_occ, lattice_shape):
                 )
             )
     return jnp.stack([*input_ar], axis=-1)
+
+
+@partial(jit, static_argnums=(2,))
+def get_input_translate(elec_pos, phonon_occ, lattice):
+    elec_k_ar = jnp.zeros(lattice.shape)
+    elec_k_ar = elec_k_ar.at[elec_pos].set(1)
+    input_ar = jnp.stack([elec_k_ar, *phonon_occ.reshape(-1, *lattice.shape)], axis=-1)
+    translations = vmap(lambda x: jnp.roll(input_ar, x, axis=(0,)))(
+        jnp.array(lattice.sites)
+    )
+    return translations
 
 
 @partial(jit, static_argnums=(2,))
@@ -99,6 +110,7 @@ def get_input_k_2(
     input_ar = jnp.stack([elec_k_ar, *phonon_occ.reshape(-1, *lattice_shape)], axis=-1)
     return input_ar
 
+
 @partial(jit, static_argnums=(2,))
 def get_input_k_2_ns(
     elec_k: List[tuple], phonon_occ: jnp.ndarray, lattice_shape: Sequence
@@ -123,8 +135,11 @@ def get_input_k_2_ns(
     elec_k_ar_1 = jnp.zeros(lattice_shape)
     elec_k_ar_0 = elec_k_ar_0.at[elec_k[0]].add(1)
     elec_k_ar_1 = elec_k_ar_1.at[elec_k[1]].add(1)
-    input_ar = jnp.stack([elec_k_ar_0, elec_k_ar_1, *phonon_occ.reshape(-1, *lattice_shape)], axis=-1)
+    input_ar = jnp.stack(
+        [elec_k_ar_0, elec_k_ar_1, *phonon_occ.reshape(-1, *lattice_shape)], axis=-1
+    )
     return input_ar
+
 
 @partial(jit, static_argnums=(2,))
 def get_input_k_2_ee(
@@ -303,11 +318,13 @@ class product_states:
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap(self, elec_pos, phonon_occ, parameters, lattice):
-        return jnp.sum(jnp.array(
-            [
-                state.calc_overlap(elec_pos, phonon_occ, parameters[i], lattice)
-                for i, state in enumerate(self.states)
-            ])
+        return jnp.sum(
+            jnp.array(
+                [
+                    state.calc_overlap(elec_pos, phonon_occ, parameters[i], lattice)
+                    for i, state in enumerate(self.states)
+                ]
+            )
         )
 
     @partial(jit, static_argnums=(0, 6))
@@ -1754,7 +1771,7 @@ class nn_complex:
         outputs_phi = jnp.array(
             self.nn_apply_phi(nn_phi, inputs + 0.0j), dtype="complex64"
         )
-        overlap = jnp.exp(outputs_r[0]) * jnp.exp(1.0j * jnp.sum(outputs_phi))
+        overlap = jnp.exp(outputs_r[0] + 1.0j * outputs_phi[0])
 
         symm_fac = lattice.get_symm_fac(elec_pos, self.k)
         return jnp.log(overlap * symm_fac)
@@ -1796,6 +1813,26 @@ class nn_complex:
                 self.lattice_shape,
             )
         )
+
+
+@dataclass
+class nn_complex_t(nn_complex):
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap(self, elec_pos, phonon_occ, parameters, lattice):
+        nn_r = parameters[0]
+        nn_phi = parameters[1]
+        inputs = self.get_input(elec_pos, phonon_occ, lattice)
+        outputs_r = vmap(self.nn_apply_r, in_axes=(None, 0))(nn_r, inputs)
+        outputs_phi = vmap(self.nn_apply_phi, in_axes=(None, 0))(nn_phi, inputs)
+        outputs = outputs_r + 1.0j * outputs_phi
+        log_overlap = jsp.special.logsumexp(outputs, axis=0)
+        symm_fac = lattice.get_symm_fac(elec_pos, self.k)
+
+        return jnp.sum(log_overlap)
+
+    def __hash__(self):
+        return super().__hash__()
 
 
 @dataclass
