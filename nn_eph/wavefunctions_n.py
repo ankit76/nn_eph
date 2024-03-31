@@ -622,7 +622,7 @@ class uhf(wave_function):
         )
 
     @partial(jit, static_argnums=(0, 4))
-    def calc_overlap_ratio_slow(
+    def calc_overlap_ratio_t_slow(
         self, walker_data: dict, excitation: dict, parameters: Sequence, lattice: Any
     ) -> complex:
         walker = walker_data["walker_occ"].copy()
@@ -631,14 +631,14 @@ class uhf(wave_function):
         a_pos = jnp.array(lattice.sites)[excitation_idx[2]]
         walker = lax.cond(
             excitation_idx[0] == 0,
-            lambda x: walker.at[0, *i_pos].set(0),
-            lambda x: walker.at[1, *i_pos].set(0),
+            lambda x: walker.at[(0, *i_pos)].set(0),
+            lambda x: walker.at[(1, *i_pos)].set(0),
             i_pos,
         )
         walker = lax.cond(
             excitation_idx[0] == 0,
-            lambda x: walker.at[0, *a_pos].set(1),
-            lambda x: walker.at[1, *a_pos].set(1),
+            lambda x: walker.at[(0, *a_pos)].set(1),
+            lambda x: walker.at[(1, *a_pos)].set(1),
             a_pos,
         )
 
