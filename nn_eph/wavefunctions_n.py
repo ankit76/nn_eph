@@ -959,8 +959,8 @@ def apply_excitation_ee(
     walker_copy = walker.copy()
     i_pos = jnp.array(lattice.sites)[excitation["idx"][1]]
     a_pos = jnp.array(lattice.sites)[excitation["idx"][2]]
-    walker_copy = walker_copy.at[excitation["idx"][0], *i_pos].set(0)
-    walker_copy = walker_copy.at[excitation["idx"][0], *a_pos].set(1)
+    walker_copy = walker_copy.at[(excitation["idx"][0], *i_pos)].set(0)
+    walker_copy = walker_copy.at[(excitation["idx"][0], *a_pos)].set(1)
     return walker_copy
 
 
