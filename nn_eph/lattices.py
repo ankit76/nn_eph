@@ -140,32 +140,23 @@ class one_dimensional_chain:
             else 1.0
         )
 
+    @partial(jit, static_argnums=(0,))
     def get_neighboring_bonds(self, pos):
-        return (
-            jnp.array(
-                [
-                    (
-                        0,
-                        (pos[0] - 1) % self.n_sites,
-                    ),
-                    (
-                        0,
-                        pos[0],
-                    ),
-                ]
-            )
-            if self.n_sites > 2
-            else jnp.array(
-                [
-                    (
-                        0,
-                        0,
-                    )
-                ]
-            )
+        return jnp.array(
+            [
+                (
+                    0,
+                    (pos[0] - 1) % self.n_sites,
+                ),
+                (
+                    0,
+                    pos[0],
+                ),
+            ]
         )
 
     # ordering is used in the ssh model
+    @partial(jit, static_argnums=(0,))
     def get_nearest_neighbors(self, pos):
         return jnp.array(
             [((pos[0] - 1) % self.n_sites,), ((pos[0] + 1) % self.n_sites,)]
@@ -196,6 +187,7 @@ class one_dimensional_chain:
             )
         )
 
+    @partial(jit, static_argnums=(0,))
     def get_neighboring_sites(self, bond):
         return [(bond[1] % self.n_sites,), ((bond[1] + 1) % self.n_sites,)]
 
