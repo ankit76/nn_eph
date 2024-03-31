@@ -1,18 +1,14 @@
 import os
 
-import numpy as np
-
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Sequence, Tuple
+from typing import Any, Sequence, Tuple
 
 # os.environ['JAX_ENABLE_X64'] = 'True'
 import jax
-from flax import linen as nn
-from jax import grad, jit, lax
+from jax import jit, lax
 from jax import numpy as jnp
-from jax import random, tree_util, value_and_grad, vmap
 
 
 @dataclass
@@ -79,12 +75,10 @@ class hubbard:
             Tuple of local energy, qp_weight (0. here), overlap_gradient_ratio, weight, updated_walker, overlap
         """
         walker_data = wave.build_walker_data(walker, parameters, lattice)
-        elec_pos_up = jnp.array(lattice.sites)[
-            jnp.nonzero(walker[0].reshape(-1), size=self.n_elec[0])[0]
-        ]
-        elec_pos_dn = jnp.array(lattice.sites)[
-            jnp.nonzero(walker[1].reshape(-1), size=self.n_elec[1])[0]
-        ]
+        elec_idx_up = jnp.nonzero(walker[0].reshape(-1), size=self.n_elec[0])[0]
+        elec_pos_up = jnp.array(lattice.sites)[elec_idx_up]
+        elec_idx_dn = jnp.nonzero(walker[1].reshape(-1), size=self.n_elec[1])[0]
+        elec_pos_dn = jnp.array(lattice.sites)[elec_idx_dn]
 
         # diagonal
         energy = self.diagonal_energy(walker) + 0.0j
@@ -94,11 +88,16 @@ class hubbard:
         qp_weight = 0.0
 
         # electron hops
+        # NB: parity is not included here, it is included in the wave function overlap ratio
         # scan over neighbors of elec_pos
-        # carry: [ energy, spin, elec_pos, idx ]
+        # excitation["sm_idx"]: [ spin, i_rel, a_abs ]
+        # excitation["idx"]: [ spin, i_rel, a_abs ]
+        # carry: [ energy, spin, elec_pos, occ_idx ]
         def scanned_fun(carry, x):
             neighbor_site_num = lattice.get_site_num(x)
-            excitation = jnp.array((carry[1], carry[3], neighbor_site_num))
+            excitation = {}
+            excitation["sm_idx"] = jnp.array((carry[1], carry[3], neighbor_site_num))
+            excitation["idx"] = jnp.array((carry[1], carry[2], neighbor_site_num))
             ratio = (walker[carry[1]][(*x,)] == 0) * wave.calc_overlap_ratio(
                 walker_data, excitation, parameters, lattice
             )
@@ -150,8 +149,8 @@ class hubbard:
         )
         neighbor_ind = new_ind % lattice.coord_num
         neighbor_pos = lattice.get_nearest_neighbors(pos)[neighbor_ind]
-        walker = walker.at[spin_ind, (*pos,)].set(0)
-        walker = walker.at[spin_ind, (*neighbor_pos,)].set(1)
+        walker = walker.at[(spin_ind, *pos)].set(0)
+        walker = walker.at[(spin_ind, *neighbor_pos)].set(1)
 
         energy = jnp.where(jnp.isnan(energy), 0.0, energy)
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
@@ -401,6 +400,7 @@ class hubbard_holstein:
 if __name__ == "__main__":
     import lattices
     import models
+    import numpy as np
     import wavefunctions
 
     # l_x, l_y, l_z = 3, 3, 3
