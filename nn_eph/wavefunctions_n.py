@@ -168,6 +168,7 @@ class product_state(wave_function):
         Converts Hamiltonian dependent walker to state-specific walkers, default is identity
     excitation_adapters : Sequence
         Converts Hamiltonian dependent excitation to state-specific excitations, default is identity
+        also returns 1 or 0 based on if the excitation is relevant for the state
     n_parameters : int
         Number of parameters in the wave function
     """
@@ -182,7 +183,7 @@ class product_state(wave_function):
         if self.walker_adapters is None:
             self.walker_adapters = (lambda x: x,) * len(self.states)
         if self.excitation_adapters is None:
-            self.excitation_adapters = (lambda x: x,) * len(self.states)
+            self.excitation_adapters = (lambda x: (x, 1.0),) * len(self.states)
 
     @partial(jit, static_argnums=(0, 3))
     def build_walker_data(
@@ -235,15 +236,20 @@ class product_state(wave_function):
         parameters: Sequence,
         lattice: Any,
     ) -> complex:
+        excitations = [
+            self.excitation_adapters[i](excitation) for i in range(len(self.states))
+        ]
         return jnp.prod(
             jnp.array(
                 [
-                    state.calc_overlap_ratio(
+                    excitations[i][1]
+                    * state.calc_overlap_ratio(
                         walker_data[i],
-                        self.excitation_adapters[i](excitation),
+                        excitations[i][0],
                         parameters[i],
                         lattice,
                     )
+                    + (1.0 - excitations[i][1]) * 1.0
                     for i, state in enumerate(self.states)
                 ]
             )
@@ -257,15 +263,20 @@ class product_state(wave_function):
         parameters: Sequence,
         lattice: Any,
     ) -> complex:
+        excitations = [
+            self.excitation_adapters[i](excitation) for i in range(len(self.states))
+        ]
         return jnp.prod(
             jnp.array(
                 [
-                    state.calc_overlap_ratio_t(
+                    excitations[i][1]
+                    * state.calc_overlap_ratio_t(
                         walker_data[i],
-                        self.excitation_adapters[i](excitation),
+                        excitations[i][0],
                         parameters[i],
                         lattice,
                     )
+                    + (1.0 - excitations[i][1]) * 1.0
                     for i, state in enumerate(self.states)
                 ]
             )
@@ -273,14 +284,19 @@ class product_state(wave_function):
 
     @partial(jit, static_argnums=(0, 3))
     def calc_parity(self, walker_data: Any, excitation: Any, lattice: Any) -> complex:
+        excitations = [
+            self.excitation_adapters[i](excitation) for i in range(len(self.states))
+        ]
         return jnp.prod(
             jnp.array(
                 [
-                    state.calc_parity(
+                    excitations[i][1]
+                    * state.calc_parity(
                         walker_data[i],
-                        self.excitation_adapters[i](excitation),
+                        excitations[i][0],
                         lattice,
                     )
+                    + (1.0 - excitations[i][1]) * 1.0
                     for i, state in enumerate(self.states)
                 ]
             )
@@ -295,6 +311,16 @@ class product_state(wave_function):
                 self.excitation_adapters,
             )
         )
+
+
+@jit
+def walker_adapter_ee(walker: jnp.ndarray) -> jnp.ndarray:
+    return walker[:2]
+
+
+@jit
+def excitation_adapter_ee(excitation: dict) -> Tuple:
+    return excitation["ee"], excitation["ee"]["idx"][0] < 2
 
 
 @dataclass
@@ -396,8 +422,8 @@ class t_projected_state(wave_function):
         lattice: Any,
     ) -> complex:
         translated_excitations = vmap(
-            self.excitation_translator, in_axes=(None, 0, None, None)
-        )(excitation, jnp.array(lattice.sites), walker_data, lattice)
+            self.excitation_translator, in_axes=(None, 0, None)
+        )(excitation, jnp.array(lattice.sites), lattice)
         ratios = vmap(
             self.state.calc_overlap_ratio_t,
             in_axes=(0, 0, None, None),
@@ -431,15 +457,15 @@ class t_projected_state(wave_function):
 
 
 @partial(jit, static_argnums=(2,))
-def walker_translator_ee(
+def walker_translator(
     walker: jnp.ndarray, displacement: jnp.ndarray, lattice: Any
 ) -> jnp.ndarray:
-    """Translate an electronic walker
+    """Translate a walker
 
     Parameters
     ----------
     walker : jnp.ndarray
-        Electronic walker as occupation number array [elec_occ_up, elec_occ_dn]
+        Walker as occupation number array electrons and possibly phonons
     displacement : jnp.ndarray
         Displacement to be applied to the walker
 
@@ -454,9 +480,9 @@ def walker_translator_ee(
     return walker_t
 
 
-@partial(jit, static_argnums=(3,))
+@partial(jit, static_argnums=(2,))
 def excitation_translator_ee(
-    excitation: jnp.ndarray, displacement: jnp.ndarray, walker_data: Any, lattice: Any
+    excitation: jnp.ndarray, displacement: jnp.ndarray, lattice: Any
 ) -> jnp.ndarray:
     """Translate an electronic excitation
 
@@ -482,6 +508,36 @@ def excitation_translator_ee(
     excitation_t["idx"] = (
         excitation_t["idx"].at[1:].set(jnp.array([new_i_idx, new_a_idx]))
     )
+    return excitation_t
+
+
+@partial(jit, static_argnums=(2,))
+def excitation_translator_eph(
+    excitation: jnp.ndarray, displacement: jnp.ndarray, lattice: Any
+) -> jnp.ndarray:
+    """Translate an electronic excitation
+
+    Parameters
+    ----------
+    excitation : jnp.ndarray
+        Excitation to be applied, with electronic part (sigma, i, a) for i,sigma -> a,sigma
+        and phonon part (pos, phonon_change)
+    displacement : jnp.ndarray
+        Displacement to be applied to the excitation
+
+    Returns
+    -------
+    jnp.ndarray
+        Translated excitation
+    """
+    excitation_ee_t = excitation_translator_ee(excitation["ee"], displacement, lattice)
+    excitation_ph = excitation["ph"]
+    new_pos = lattice.get_site_num(
+        (jnp.array(lattice.sites)[excitation_ph[0]] + displacement)
+        % jnp.array(lattice.shape)
+    )
+    excitation_ph_t = jnp.array([new_pos, excitation_ph[1]])
+    excitation_t = {"ee": excitation_ee_t, "ph": excitation_ph_t}
     return excitation_t
 
 
@@ -558,7 +614,7 @@ class uhf(wave_function):
         walker = walker_data["walker"]
         overlap_up = jnp.linalg.det(parameters[0][walker[0], :])
         overlap_dn = jnp.linalg.det(parameters[1][walker[1], :])
-        return jnp.log(overlap_up * overlap_dn)
+        return jnp.log(overlap_up * overlap_dn + 0.0j)
 
     # only supports single excitation for now
     # does not consider parity
@@ -782,7 +838,7 @@ class ghf(uhf):
     ) -> complex:
         walker = walker_data["walker_ghf"]
         overlap = jnp.linalg.det(parameters[0][walker, :])
-        return jnp.log(overlap)
+        return jnp.log(overlap + 0.0j)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_ratio(
@@ -873,12 +929,14 @@ class nn(wave_function):
         Function to apply an excitation to the walker
     n_parameters : int
         Number of parameters in the wave function
+    input_adapter : Callable
+        Function to get the input for the NN
     """
 
     nn_apply: Callable
     apply_excitation: Callable
-    n_elec: tuple
     n_parameters: int
+    input_adapter: Callable = lambda x, y: x.reshape((1, *x.shape))
 
     @partial(jit, static_argnums=(0, 3))
     def build_walker_data(
@@ -886,10 +944,6 @@ class nn(wave_function):
     ) -> dict:
         walker_data = {"walker_occ": walker}
         walker_data["log_overlap"] = self.calc_overlap(walker_data, parameters, lattice)
-        elec_pos_up = jnp.nonzero(walker[0].reshape(-1), size=self.n_elec[0])[0]
-        elec_pos_dn = jnp.nonzero(walker[1].reshape(-1), size=self.n_elec[1])[0]
-        walker_pos = (elec_pos_up, elec_pos_dn)
-        walker_data["walker_pos"] = walker_pos
         return walker_data
 
     def serialize(self, parameters: Any) -> jnp.ndarray:
@@ -911,9 +965,12 @@ class nn(wave_function):
 
     @partial(jit, static_argnums=(0, 3))
     def calc_overlap(self, walker_data: dict, parameters: Any, lattice: Any) -> complex:
-        inputs = walker_data["walker_occ"]
-        outputs = jnp.array(self.nn_apply(parameters, inputs + 0.0j), dtype="complex64")
-        return outputs[0]
+        inputs = self.input_adapter(walker_data["walker_occ"], lattice)
+        outputs = jnp.array(
+            vmap(self.nn_apply, in_axes=(None, 0))(parameters, inputs + 0.0j),
+            dtype="complex64",
+        )
+        return jsp.special.logsumexp(outputs, axis=0)[0]
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_ratio(
@@ -927,13 +984,24 @@ class nn(wave_function):
         new_walker = self.apply_excitation(
             walker_data["walker_occ"], excitation, lattice
         )
+        inputs = self.input_adapter(new_walker, lattice)
         outputs = jnp.array(
-            self.nn_apply(parameters, new_walker + 0.0j), dtype="complex64"
+            vmap(self.nn_apply, in_axes=(None, 0))(parameters, inputs + 0.0j),
+            dtype="complex64",
         )
-        return jnp.exp(outputs[0] - walker_data["log_overlap"])
+        return jnp.exp(
+            jsp.special.logsumexp(outputs, axis=0)[0] - walker_data["log_overlap"]
+        )
 
     def __hash__(self):
-        return hash((self.n_parameters, self.nn_apply, self.apply_excitation))
+        return hash(
+            (
+                self.n_parameters,
+                self.nn_apply,
+                self.apply_excitation,
+                self.input_adapter,
+            )
+        )
 
 
 @partial(jit, static_argnums=(2,))
@@ -962,6 +1030,29 @@ def apply_excitation_ee(
     walker_copy = walker_copy.at[(excitation["idx"][0], *i_pos)].set(0)
     walker_copy = walker_copy.at[(excitation["idx"][0], *a_pos)].set(1)
     return walker_copy
+
+
+# this is defined to work for holstein
+@partial(jit, static_argnums=(2,))
+def apply_excitation_eph(walker, excitation, lattice):
+    walker_copy = walker.copy()
+    excitation_ee = excitation["ee"]
+    walker_ee = apply_excitation_ee(walker_copy[:2], excitation_ee, lattice)
+    walker_copy = walker_copy.at[:2].set(walker_ee)
+    excitation_ph = excitation["ph"]
+    site = jnp.array(lattice.sites)[excitation_ph[0]]
+    phonon_change = excitation_ph[1]
+    walker_copy = walker_copy.at[(2, *site)].add(phonon_change)
+    return walker_copy
+
+
+@partial(jit, static_argnums=(1,))
+def input_adapter_t(walker, lattice):
+    """Returns all translations of the walker"""
+    walker_t = vmap(walker_translator, in_axes=(None, 0, None))(
+        walker, jnp.array(lattice.sites), lattice
+    )
+    return walker_t
 
 
 @dataclass

@@ -217,8 +217,8 @@ class hubbard_holstein:
         float
             Diagonal energy
         """
-        coulomb_energy = self.u * jnp.sum(walker[0][0] * walker[0][1])
-        phonon_energy = self.omega * jnp.sum(walker[1])
+        coulomb_energy = self.u * jnp.sum(walker[0] * walker[1])
+        phonon_energy = self.omega * jnp.sum(walker[2])
         energy = coulomb_energy + phonon_energy
         return energy
 
@@ -236,7 +236,7 @@ class hubbard_holstein:
         Parameters
         ----------
         walker : Sequence
-            walker : [ (elec_occ_up, elec_occ_dn), phonon_occ ]
+            walker : [ elec_occ_up, elec_occ_dn, phonon_occ ]
         parameters : Any
             Parameters of the wavefunction
         wave : Any
@@ -253,12 +253,12 @@ class hubbard_holstein:
         """
         walker_data = wave.build_walker_data(walker, parameters, lattice)
         elec_pos_up = jnp.array(lattice.sites)[
-            jnp.nonzero(walker[0][0].reshape(-1), size=self.n_elec[0])[0]
+            jnp.nonzero(walker[0].reshape(-1), size=self.n_elec[0])[0]
         ]
         elec_pos_dn = jnp.array(lattice.sites)[
-            jnp.nonzero(walker[0][1].reshape(-1), size=self.n_elec[1])[0]
+            jnp.nonzero(walker[1].reshape(-1), size=self.n_elec[1])[0]
         ]
-        phonon_occ = walker[1]
+        phonon_occ = walker[2]
 
         # diagonal
         energy = self.diagonal_energy(walker) + 0.0j
@@ -272,8 +272,12 @@ class hubbard_holstein:
         # carry: [ energy, spin, elec_pos, idx ]
         def scanned_fun(carry, x):
             neighbor_site_num = lattice.get_site_num(x)
-            excitation = jnp.array((carry[1], carry[3], neighbor_site_num))
-            ratio = (walker[0][carry[1]][(*x,)] == 0) * wave.calc_overlap_ratio(
+            excitation_ee = {}
+            excitation_ee["sm_idx"] = jnp.array((carry[1], carry[3], neighbor_site_num))
+            excitation_ee["idx"] = jnp.array((carry[1], carry[2], neighbor_site_num))
+            excitation_ph = jnp.array((0, 0))
+            excitation = {"ee": excitation_ee, "ph": excitation_ph}
+            ratio = (walker[carry[1]][(*x,)] == 0) * wave.calc_overlap_ratio(
                 walker_data, excitation, parameters, lattice
             )
             carry[0] -= ratio
@@ -299,49 +303,54 @@ class hubbard_holstein:
         hop_ratios = jnp.concatenate((ratios_up.reshape(-1), ratios_dn.reshape(-1)))
 
         # eph
-        walker_data_copy = walker_data.copy()
-        elec_occ_up = walker[0][0]
-        elec_occ_dn = walker[0][1]
+        excitation_ee = {}
+        excitation_ee["sm_idx"] = jnp.array((2, 0, 0))
+        excitation_ee["idx"] = jnp.array((2, 0, 0))
+        excitation = {"ee": excitation_ee}
 
         # scan over lattice sites
-        # carry: energy
+        # carry: [ energy, site_idx ]
         def scanned_fun_ph(carry, x):
             # add phonon
-            new_phonon_occ = phonon_occ.at[(*x,)].add(1)
-            walker_data_copy["phonon_occ"] = new_phonon_occ
-            new_overlap = wave.calc_overlap(walker_data_copy, parameters, lattice)
+            excitation["ph"] = jnp.array((carry[1], 1))
+            overlap_ratio = wave.calc_overlap_ratio(
+                walker_data, excitation, parameters, lattice
+            )
             ratio_0 = (
                 (jnp.sum(phonon_occ) < self.max_n_phonons)
-                * jnp.exp(new_overlap - overlap)
+                * ((walker[0][(*x,)] + walker[1][(*x,)]) > 0)
+                * overlap_ratio
                 / (phonon_occ[(*x,)] + 1) ** 0.5
             )
-            carry -= (
+            carry[0] -= (
                 self.g
                 * (phonon_occ[(*x,)] + 1) ** 0.5
                 * ratio_0
-                * (elec_occ_up[(*x,)] + elec_occ_dn[(*x,)])
+                * (walker[0][(*x,)] + walker[1][(*x,)])
             )
 
             # remove phonon
-            new_phonon_occ = phonon_occ.at[(*x,)].add(-1)
-            new_phonon_occ = jnp.where(new_phonon_occ < 0, 0, new_phonon_occ)
-            walker_data_copy["phonon_occ"] = new_phonon_occ
-            new_overlap = wave.calc_overlap(walker_data_copy, parameters, lattice)
+            excitation["ph"] = jnp.array((carry[1], -1))
+            overlap_ratio = wave.calc_overlap_ratio(
+                walker_data, excitation, parameters, lattice
+            )
             ratio_1 = (
                 (phonon_occ[(*x,)] > 0)
-                * jnp.exp(new_overlap - overlap)
+                * ((walker[0][(*x,)] + walker[1][(*x,)]) > 0)
+                * overlap_ratio
                 * phonon_occ[(*x,)] ** 0.5
             )
-            carry -= (
+            carry[0] -= (
                 self.g
                 * phonon_occ[(*x,)] ** 0.5
                 * ratio_1
-                * (elec_occ_up[(*x,)] + elec_occ_dn[(*x,)])
+                * (walker[0][(*x,)] + walker[1][(*x,)])
             )
+            carry[1] += 1
             return carry, (ratio_0, ratio_1)
 
-        energy, (ratios_p, ratios_m) = lax.scan(
-            scanned_fun_ph, energy, jnp.array(lattice.sites)
+        [energy, _], (ratios_p, ratios_m) = lax.scan(
+            scanned_fun_ph, [energy, 0], jnp.array(lattice.sites)
         )
 
         ratios = jnp.concatenate((hop_ratios, ratios_p, ratios_m))
@@ -352,18 +361,19 @@ class hubbard_holstein:
             cumulative_ratios, random_number * cumulative_ratios[-1]
         )
 
-        jax.debug.print("\nwalker: {}", walker_data)
-        jax.debug.print("overlap: {}", overlap)
-        jax.debug.print("ratios: {}", ratios)
-        jax.debug.print("energy: {}", energy)
-        jax.debug.print("weight: {}", weight)
-        jax.debug.print("random_number: {}", random_number)
-        jax.debug.print("new_ind: {}\n", new_ind)
-
-        return 1
+        # jax.debug.print("\nwalker: {}", walker_data)
+        # jax.debug.print("overlap: {}", overlap)
+        # jax.debug.print("grad: {}", overlap_gradient)
+        # jax.debug.print("ratios: {}", ratios)
+        # jax.debug.print("energy: {}", energy)
+        # jax.debug.print("weight: {}", weight)
+        # jax.debug.print("random_number: {}", random_number)
+        # jax.debug.print("new_ind: {}\n", new_ind)
 
         # update
-        spin_ind = (new_ind >= elec_pos_up.shape[0] * lattice.coord_num) * 1
+        # NB: some of these operations rely on jax not complaining about out of bounds array access
+        ee = new_ind < (self.n_elec[0] + self.n_elec[1]) * lattice.coord_num
+        spin_ind = (new_ind >= self.n_elec[0] * lattice.coord_num) * 1
         pos = lax.cond(
             spin_ind == 0,
             lambda x: elec_pos_up[x // lattice.coord_num],
@@ -374,8 +384,32 @@ class hubbard_holstein:
         )
         neighbor_ind = new_ind % lattice.coord_num
         neighbor_pos = lattice.get_nearest_neighbors(pos)[neighbor_ind]
-        walker = walker.at[spin_ind, (*pos,)].set(0)
-        walker = walker.at[spin_ind, (*neighbor_pos,)].set(1)
+        walker = lax.cond(
+            ee, lambda x: walker.at[(spin_ind, *pos)].set(0), lambda x: walker, 0
+        )
+        walker = lax.cond(
+            ee,
+            lambda x: walker.at[(spin_ind, *neighbor_pos)].set(1),
+            lambda x: walker,
+            0,
+        )
+
+        eph = 1 - ee
+        ph_idx = new_ind - (self.n_elec[0] + self.n_elec[1]) * lattice.coord_num
+        pos = jnp.array(lattice.sites)[ph_idx % lattice.n_sites]
+        ph_change = (ph_idx // lattice.n_sites == 0) * 1 - (
+            ph_idx // lattice.n_sites == 1
+        ) * 1
+        walker = lax.cond(
+            eph,
+            lambda x: walker.at[(2, *pos)].add(ph_change),
+            lambda x: walker,
+            0,
+        )
+
+        walker = jnp.where(walker < 0, 0, walker)
+
+        # jax.debug.print("new_walker: {}", walker)
 
         energy = jnp.where(jnp.isnan(energy), 0.0, energy)
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
