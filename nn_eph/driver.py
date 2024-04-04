@@ -710,6 +710,7 @@ def driver_lr_sf(
     comm.barrier()
     metric = metric[pos_ind][:, pos_ind]
     h = h[pos_ind][:, pos_ind]
+    prop = prop[pos_ind]
 
     prop = np.array(weight * prop)  # , dtype="float32")
     prop_norm = np.array(weight * prop_norm)  # , dtype="float32")
