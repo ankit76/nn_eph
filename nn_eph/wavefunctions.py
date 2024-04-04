@@ -1771,7 +1771,7 @@ class nn_complex:
         outputs_phi = jnp.array(
             self.nn_apply_phi(nn_phi, inputs + 0.0j), dtype="complex64"
         )
-        overlap = jnp.exp(outputs_r[0] + 1.0j * outputs_phi[0])
+        overlap = jnp.exp(outputs_r[0] + 1.0j * jnp.sum(outputs_phi))
 
         symm_fac = lattice.get_symm_fac(elec_pos, self.k)
         return jnp.log(overlap * symm_fac)
