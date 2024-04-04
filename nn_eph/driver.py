@@ -641,6 +641,129 @@ def driver_lr(
     return total_metric, total_h, k_vec
 
 
+def driver_lr_sf(
+    walker,
+    ham,
+    parameters,
+    wave,
+    lattice,
+    sampler,
+    seed=0,
+    print_stats=True,
+    dev_thresh_fac=1.0e6,
+):
+    key = random.PRNGKey(seed + rank)
+    walker_0 = walker.copy()
+
+    # dev_thresh_fac = 1.0e6
+    key, subkey = random.split(key)
+    random_numbers = random.uniform(subkey, shape=(sampler.n_samples,))
+    # g_scan = g #* (1 - jnp.exp(-iteration / 10))
+    # starter_iters = 100
+    # if iteration < starter_iters:
+    #  g_scan = 0.
+    # else:
+    #  g_scan = g * (1. - jnp.exp(-(iteration - starter_iters) / 500))
+    # g_scan = 6. - (6. - g) * (1. - jnp.exp(-(iteration - starter_iters) / 500))
+    (
+        weight,
+        energy,
+        norm,
+        prop,
+        prop_norm,
+        metric,
+        h,
+        energies,
+        norms,
+        weights,
+    ) = sampler.sampling_lr_sf(
+        walker, ham, parameters, wave, lattice, random_numbers, dev_thresh_fac
+    )
+    # return metric, h
+
+    # reject outliers
+    # samples_clean, clean_ind = stat_utils.reject_outliers(
+    #     np.stack((energies, qp_weights, weights)).T, 0, dev_thresh_fac / 100.0
+    # )
+    # energies_clean = samples_clean[:, 0]
+    # qp_weights_clean = samples_clean[:, 1]
+    # weights_clean = samples_clean[:, 2]
+    # weight = np.sum(weights_clean)
+    # energy = np.average(energies_clean, weights=weights_clean)
+    # qp_weight = np.average(qp_weights_clean, weights=weights_clean)
+
+    # average and print energies for the current step
+    weight = np.array([weight], dtype="float32")
+    energy = np.array([weight * energy], dtype="float32")
+    norm = np.array([weight * norm], dtype="float32")
+    # energy = np.array([ energy ])
+    total_weight = 0.0 * weight
+    total_energy = 0.0 * weight
+    total_norm = 0.0 * weight
+    # gradient = np.array(weight * gradient, dtype="float32")
+    # lene_gradient = np.array(weight * lene_gradient, dtype="float32")
+
+    # throw away zero norm vectors in the metric
+    pos_ind = metric.diagonal().real > 0
+    comm.barrier()
+    pos_ind = comm.bcast(pos_ind, root=0)
+    comm.barrier()
+    metric = metric[pos_ind][:, pos_ind]
+    h = h[pos_ind][:, pos_ind]
+
+    prop = np.array(weight * prop)  # , dtype="float32")
+    prop_norm = np.array(weight * prop_norm)  # , dtype="float32")
+    metric = np.array(weight * metric)  # , dtype="complex64")
+    h = np.array(weight * h)  # , dtype="complex64")
+    # gradient = np.array(gradient)
+    # lene_gradient = np.array(lene_gradient)
+    total_metric = 0.0 * metric
+    total_h = 0.0 * h
+
+    comm.barrier()
+    comm.Reduce([weight, MPI.FLOAT], [total_weight, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([energy, MPI.FLOAT], [total_energy, MPI.FLOAT], op=MPI.SUM, root=0)
+    comm.Reduce([norm, MPI.FLOAT], [total_norm, MPI.FLOAT], op=MPI.SUM, root=0)
+    # comm.Reduce([metric, MPI.FLOAT], [total_metric, MPI.FLOAT], op=MPI.SUM, root=0)
+    # comm.Reduce(
+    #     [h, MPI.FLOAT],
+    #     [total_h, MPI.FLOAT],
+    #     op=MPI.SUM,
+    #     root=0,
+    # )
+    total_prop = comm.reduce(prop, op=MPI.SUM, root=0)
+    total_prop_norm = comm.reduce(prop_norm, op=MPI.SUM, root=0)
+    total_metric = comm.reduce(metric, op=MPI.SUM, root=0)
+    total_h = comm.reduce(h, op=MPI.SUM, root=0)
+    comm.barrier()
+    if rank == 0:
+        total_energy /= total_weight
+        total_norm /= total_weight
+        total_prop /= total_weight
+        total_prop_norm /= total_weight
+        total_metric /= total_weight
+        total_h /= total_weight
+        print(f"energy: {total_energy / total_metric[0,0]}")
+        total_h = (total_h + total_h.T.conj()) / 2
+        total_prop[:, 0] = (
+            total_prop[:, 0] / (total_prop[:, 2] * total_prop_norm[2]) ** 0.5
+        )
+        total_prop[:, 1] = (
+            total_prop[:, 1] / (total_prop[:, 2] * total_prop_norm[2]) ** 0.5
+        )
+        total_prop = total_prop[:, :2]
+        total_prop_norm = total_prop_norm[:2] / total_prop_norm[2]
+
+    comm.barrier()
+    total_h = comm.bcast(total_h, root=0)
+    total_metric = comm.bcast(total_metric, root=0)
+    total_prop = comm.bcast(total_prop, root=0)
+    total_prop_norm = comm.bcast(total_prop_norm, root=0)
+    comm.barrier()
+
+    return total_metric, total_h, total_prop, total_prop_norm
+
+
 if __name__ == "__main__":
     import hamiltonians
     import lattices
