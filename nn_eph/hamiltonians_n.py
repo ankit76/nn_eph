@@ -444,7 +444,8 @@ class hubbard_holstein:
 
         overlap = wave.calc_overlap(walker_data, parameters, lattice)
         overlap_gradient = wave.calc_overlap_gradient(walker_data, parameters, lattice)
-        qp_weight = (jnp.sum(phonon_occ) == 0) * 1.0
+        # qp_weight = (jnp.sum(phonon_occ) == 0) * 1.0
+        qp_weight = jnp.sum(walker[0] * walker[1])
 
         # electron hops
         # scan over neighbors of elec_pos
