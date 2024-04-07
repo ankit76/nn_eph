@@ -494,7 +494,7 @@ class continuous_time:
                 jnp.einsum("i,j->ij", jnp.conj(gradient), prop[:2])
             )
             prop_1 = prop_1.at[:, 2].set(jnp.abs(gradient) ** 2)
-            prop = prop_1
+            # prop = prop_1
             # z_n = jnp.abs(overlap) ** 2
             energy = jnp.where(weight > 1.0e-8, energy, carry[9])
             carry[1] += weight
@@ -509,7 +509,9 @@ class continuous_time:
             )
             carry[4] = (
                 carry[4]
-                + weight * ((prop * jnp.abs(overlap) ** 2 / z_n) - carry[4]) / carry[1]
+                + weight
+                * ((prop_1 * jnp.abs(overlap) ** 2 / z_n) - carry[4])
+                / carry[1]
             )
             carry[5] = (
                 carry[5]
@@ -543,7 +545,7 @@ class continuous_time:
                 )
                 / carry[1]
             )
-            return carry, (jnp.real(energy), prop, weight)
+            return carry, (jnp.real(energy), prop_norm[-1], weight)
 
         weight = 0.0
         energy = 0.0

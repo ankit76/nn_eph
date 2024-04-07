@@ -745,15 +745,13 @@ def driver_lr_sf(
         total_metric /= total_weight
         total_h /= total_weight
         print(f"energy: {total_energy / total_metric[0,0]}")
+        print(f"norm: {total_norm}")
+        print(f"prop_norm: {total_prop_norm}")
         total_h = (total_h + total_h.T.conj()) / 2
-        total_prop[:, 0] = (
-            total_prop[:, 0] / (total_prop[:, 2] * total_prop_norm[2]) ** 0.5
-        )
-        total_prop[:, 1] = (
-            total_prop[:, 1] / (total_prop[:, 2] * total_prop_norm[2]) ** 0.5
-        )
-        total_prop = total_prop[:, :2]
-        total_prop_norm = total_prop_norm[:2] / total_prop_norm[2]
+        total_prop[:, 0] = total_prop[:, 0]  # / (total_norm) ** 0.5
+        total_prop[:, 1] = total_prop[:, 1]  # / (total_norm) ** 0.5
+        # total_prop = total_prop[:, :2]
+        total_prop_norm = total_prop_norm[:2] / total_norm
 
     comm.barrier()
     total_h = comm.bcast(total_h, root=0)
