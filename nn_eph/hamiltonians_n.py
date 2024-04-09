@@ -10,6 +10,8 @@ import jax
 from jax import jit, lax
 from jax import numpy as jnp
 
+from nn_eph.wavefunctions_n import wave_function
+
 
 @dataclass
 class hubbard:
@@ -61,6 +63,16 @@ class hubbard:
     def diagonal_energy(self, walker: Sequence) -> float:
         """Calculate the diagonal energy of a walker"""
         return self.u * jnp.sum(walker[0] * walker[1])
+
+    @partial(jit, static_argnums=(0, 3, 4))
+    def sf_q(
+        self, walker: Sequence, parameters: Any, wave: wave_function, lattice: Any
+    ) -> jnp.array:
+        sz_i = walker[0] - walker[1]
+        sz_q = jnp.abs(jnp.fft.fftn(sz_i, norm="ortho")) ** 2
+        c_i = walker[0] + walker[1]
+        c_q = jnp.abs(jnp.fft.fftn(c_i, norm="ortho")) ** 2
+        return jnp.array([sz_q, c_q])
 
     @partial(jit, static_argnums=(0, 3, 4))
     def local_energy_and_update(
@@ -238,7 +250,7 @@ class hubbard:
         # calculating overlap with k=0 state
         overlaps = jnp.exp(walker_data["log_overlaps"])
         overlap_0 = jnp.sum(overlaps)
-        k_factors = jnp.exp(jnp.array(wave.symm_factors))
+        k_factors = jnp.exp(-jnp.array(wave.symm_factors))
         spin_i = (walker[0] - walker[1]).reshape(-1)
         charge_i = (walker[0] + walker[1]).reshape(-1)
         spin_q = jnp.sum(k_factors * spin_i) / jnp.sqrt(lattice.n_sites)

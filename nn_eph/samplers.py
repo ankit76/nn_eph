@@ -5,7 +5,7 @@ import numpy as np
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 # os.environ['JAX_ENABLE_X64'] = 'True'
 from jax import jit, lax
@@ -119,6 +119,7 @@ class continuous_time:
     n_eql: int
     n_samples: int
     green_reweight: bool = True
+    property_function: Callable = lambda *x: 0.0
 
     @partial(jit, static_argnums=(0, 2, 4, 5))
     def sampling(
@@ -464,8 +465,11 @@ class continuous_time:
         d = jnp.abs(energies_eq - median_energy)
         mdev = jnp.median(d) + 1.0e-4
 
-        # carry : [ walker, weight, energy, norm, prop, prop_norm, metric, h, dev_thresh, median_energy ]
+        # carry : [ walker, weight, energy, norm, prop, vector_property, metric, h, dev_thresh, median_energy ]
         def scanned_fun_g(carry, x):
+            vector_property = self.property_function(
+                carry[0], parameters, wave, lattice
+            )
             energy, grad_fun, (prop, gradient, weight, carry[0], overlap) = vjp(
                 _local_energy_and_update_wrapper,
                 carry[0],
@@ -488,7 +492,7 @@ class continuous_time:
                 jnp.abs(overlap) ** 2 * (1 - self.green_reweight)
                 + self.green_reweight * (jnp.abs(gradient * overlap) ** 2).sum()
             ).real
-            prop_norm = jnp.abs(prop) ** 2
+            # prop_norm = jnp.abs(prop) ** 2
             prop_1 = jnp.zeros((gradient.size, 3)) + 0.0j
             prop_1 = prop_1.at[:, :2].set(
                 jnp.einsum("i,j->ij", jnp.conj(gradient), prop[:2])
@@ -516,7 +520,7 @@ class continuous_time:
             carry[5] = (
                 carry[5]
                 + weight
-                * ((prop_norm * jnp.abs(overlap) ** 2 / z_n) - carry[5])
+                * ((vector_property * jnp.abs(overlap) ** 2 / z_n) - carry[5])
                 / carry[1]
             )
             carry[6] += (
@@ -545,16 +549,19 @@ class continuous_time:
                 )
                 / carry[1]
             )
-            return carry, (jnp.real(energy), prop_norm[-1], weight)
+            return carry, (jnp.real(energy), 0.0, weight)
 
         weight = 0.0
         energy = 0.0
         norm = 0.0
         prop = jnp.zeros((wave.n_parameters + 1, 3)) + 0.0j
-        prop_norm = jnp.zeros(3)
+        # prop_norm = jnp.zeros(3)
+        vector_property = 0.0 * self.property_function(
+            walker, parameters, wave, lattice
+        )
         metric = jnp.zeros((wave.n_parameters + 1, wave.n_parameters + 1)) + 0.0j
         h = jnp.zeros((wave.n_parameters + 1, wave.n_parameters + 1)) + 0.0j
-        [_, weight, energy, norm, prop, prop_norm, metric, h, _, _], (
+        [_, weight, energy, norm, prop, vector_property, metric, h, _, _], (
             energies,
             norms,
             weights,
@@ -566,7 +573,7 @@ class continuous_time:
                 energy,
                 norm,
                 prop,
-                prop_norm,
+                vector_property,
                 metric,
                 h,
                 dev_thresh_fac * mdev,
@@ -581,7 +588,7 @@ class continuous_time:
             energy,
             norm,
             prop,
-            prop_norm,
+            vector_property,
             metric,
             h,
             energies,

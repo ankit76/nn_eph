@@ -670,7 +670,7 @@ def driver_lr_sf(
         energy,
         norm,
         prop,
-        prop_norm,
+        vector_prop,
         metric,
         h,
         energies,
@@ -713,7 +713,7 @@ def driver_lr_sf(
     prop = prop[pos_ind]
 
     prop = np.array(weight * prop)  # , dtype="float32")
-    prop_norm = np.array(weight * prop_norm)  # , dtype="float32")
+    vector_prop = np.array(weight * vector_prop)  # , dtype="float32")
     metric = np.array(weight * metric)  # , dtype="complex64")
     h = np.array(weight * h)  # , dtype="complex64")
     # gradient = np.array(gradient)
@@ -733,7 +733,7 @@ def driver_lr_sf(
     #     root=0,
     # )
     total_prop = comm.reduce(prop, op=MPI.SUM, root=0)
-    total_prop_norm = comm.reduce(prop_norm, op=MPI.SUM, root=0)
+    total_vector_prop = comm.reduce(vector_prop, op=MPI.SUM, root=0)
     total_metric = comm.reduce(metric, op=MPI.SUM, root=0)
     total_h = comm.reduce(h, op=MPI.SUM, root=0)
     comm.barrier()
@@ -741,26 +741,26 @@ def driver_lr_sf(
         total_energy /= total_weight
         total_norm /= total_weight
         total_prop /= total_weight
-        total_prop_norm /= total_weight
+        total_vector_prop /= total_weight
         total_metric /= total_weight
         total_h /= total_weight
         print(f"energy: {total_energy / total_metric[0,0]}")
-        print(f"norm: {total_norm}")
-        print(f"prop_norm: {total_prop_norm}")
+        # print(f"norm: {total_norm}")
         total_h = (total_h + total_h.T.conj()) / 2
         total_prop[:, 0] = total_prop[:, 0]  # / (total_norm) ** 0.5
         total_prop[:, 1] = total_prop[:, 1]  # / (total_norm) ** 0.5
+        total_vector_prop = total_vector_prop / total_norm
         # total_prop = total_prop[:, :2]
-        total_prop_norm = total_prop_norm[:2] / total_norm
+        # total_prop_norm = total_prop_norm[:2] / total_norm
 
     comm.barrier()
     total_h = comm.bcast(total_h, root=0)
     total_metric = comm.bcast(total_metric, root=0)
     total_prop = comm.bcast(total_prop, root=0)
-    total_prop_norm = comm.bcast(total_prop_norm, root=0)
+    total_vector_prop = comm.bcast(total_vector_prop, root=0)
     comm.barrier()
 
-    return total_metric, total_h, total_prop, total_prop_norm
+    return total_metric, total_h, total_prop, total_vector_prop
 
 
 if __name__ == "__main__":
