@@ -478,6 +478,9 @@ class continuous_time:
                 has_aux=True,
             )
             ene_grad = wave.serialize(grad_fun(1.0 + 0.0j)[1])
+            ene_grad = jnp.where(jnp.isnan(ene_grad), 0.0, ene_grad)
+            gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+
             # extended vectors
             ext_gradient = jnp.zeros(wave.n_parameters + 1) + 0.0j
             ext_gradient = ext_gradient.at[1:].set(gradient)
