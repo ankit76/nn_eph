@@ -11,8 +11,11 @@ def blocking_analysis(weights, energies, neql=0, printQ=False, writeBlockedQ=Fal
     energies = energies[neql:]
     weightedEnergies = np.multiply(weights, energies)
     meanEnergy = weightedEnergies.sum() / weights.sum()
+    # variance
+    variance = np.multiply(weights, (energies - meanEnergy) ** 2).sum() / weights.sum()
     if printQ:
         print(f"#\n# Mean energy: {meanEnergy:.8e}")
+        print(f"# Variance: {variance:.8e}")
         print("# Block size    # of blocks         Mean                Error")
     blockSizes = np.array([1, 2, 5, 10, 20, 50, 100, 200, 300, 400, 500, 1000, 10000])
     prevError = 0.0
