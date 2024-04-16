@@ -163,9 +163,7 @@ def driver(
 
             if iteration > 0.8 * n_steps:
                 if total_energy[0] < min_energy:
-                    best_parameters = new_parameters.copy()
-                    # print("new best parameters")
-                    # print(min_energy, total_energy[0])
+                    best_parameters = parameters.copy()
                     min_energy = total_energy[0]
                     with open("best_parameters.bin", "wb") as fh:
                         pickle.dump(best_parameters, fh)
