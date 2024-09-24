@@ -1,4 +1,3 @@
-import math
 import os
 import time
 
@@ -11,10 +10,8 @@ os.environ["JAX_PLATFORM_NAME"] = "cpu"
 import pickle
 from functools import partial
 
-# os.environ['JAX_ENABLE_X64'] = 'True'
-# os.environ['JAX_DISABLE_JIT'] = 'True'
 import jax.numpy as jnp
-from jax import random, tree_util
+from jax import random
 from mpi4py import MPI
 
 from nn_eph import samplers, stat_utils
@@ -609,34 +606,28 @@ def driver_lr(
     if rank == 0:
         total_energy /= total_weight
         total_qp_weight /= total_weight
+        assert total_metric is not None
+        assert total_h is not None
         total_metric /= total_weight
         total_h /= total_weight
         print(f"energy: {total_energy / total_metric[0,0]}")
 
         total_h = (total_h + total_h.T.conj()) / 2
-        overlap = wave.calc_overlap(walker_0[0], walker_0[1], parameters, lattice)
-        grad = wave.calc_overlap_gradient(walker_0[0], walker_0[1], parameters, lattice)
-        ext_grad = jnp.zeros(wave.n_parameters + 1) + 0.0j
-        ext_grad = ext_grad.at[0].set(1)
-        ext_grad = ext_grad.at[1:].set(grad)
-        k_vec = ext_grad * jnp.exp(overlap)
-
-        # pos_ind = total_metric.diagonal().real > 0
-        # total_metric = total_metric[pos_ind][:, pos_ind]
-        # total_h = total_h[pos_ind][:, pos_ind]
-        k_vec = k_vec[pos_ind]
-        # print(f'iter: {iteration: 5d}, ene: {total_energy[0]: .6e}, qp_weight: {total_qp_weight[0]: .6e}, grad: {jnp.linalg.nor(ene_gradient): .6e}')
-        # print(f'total_weight: {total_weight}')
-        # print(f'total_energy: {total_energy}')
-        # print(f'total_gradient: {total_gradient}')
+        # overlap = wave.calc_overlap(walker_0[0], walker_0[1], parameters, lattice)
+        # grad = wave.calc_overlap_gradient(walker_0[0], walker_0[1], parameters, lattice)
+        # ext_grad = jnp.zeros(wave.n_parameters + 1) + 0.0j
+        # ext_grad = ext_grad.at[0].set(1)
+        # ext_grad = ext_grad.at[1:].set(grad)
+        # k_vec = ext_grad * jnp.exp(overlap)
+        # k_vec = k_vec[pos_ind]
 
     comm.barrier()
     total_h = comm.bcast(total_h, root=0)
     total_metric = comm.bcast(total_metric, root=0)
-    k_vec = comm.bcast(k_vec, root=0)
+    # k_vec = comm.bcast(k_vec, root=0)
     comm.barrier()
 
-    return total_metric, total_h, k_vec
+    return total_metric, total_h, pos_ind
 
 
 def driver_lr_sf(
@@ -738,6 +729,10 @@ def driver_lr_sf(
     if rank == 0:
         total_energy /= total_weight
         total_norm /= total_weight
+        assert total_prop is not None
+        assert total_vector_prop is not None
+        assert total_metric is not None
+        assert total_h is not None
         total_prop /= total_weight
         total_vector_prop /= total_weight
         total_metric /= total_weight
@@ -759,54 +754,3 @@ def driver_lr_sf(
     comm.barrier()
 
     return total_metric, total_h, total_prop, total_vector_prop
-
-
-if __name__ == "__main__":
-    import hamiltonians
-    import lattices
-    import models
-    import samplers
-    import wavefunctions
-
-    l_x, l_y = 6, 6
-    n_sites = l_x * l_y
-    omega = 2.0
-    g = 2.0
-    n_samples = 10000
-    seed = 789941
-    n_eql = 100
-    n_steps = 10000
-    step_size = 0.02
-    sampler = samplers.continuous_time(n_eql, n_samples)
-    ham = hamiltonians.holstein_2d(omega, g)
-    lattice = lattices.two_dimensional_grid(l_x, l_y)
-    gamma = jnp.array(
-        [g / omega / n_sites for _ in range(len(lattice.shell_distances))]
-    )
-    model = models.MLP([100, 1])
-    model_input = jnp.zeros(2 * n_sites)
-    nn_parameters = model.init(random.PRNGKey(0), model_input, mutable=True)
-    n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters))
-    parameters = [gamma, nn_parameters]
-    reference = wavefunctions.merrifield(gamma.size)
-    wave = wavefunctions.nn_jastrow(model.apply, reference, n_nn_parameters)
-    walker = [
-        (0, 0),
-        jnp.array(
-            [
-                [int((g // (omega * n_sites)) ** 2) for _ in range(l_x)]
-                for _ in range(l_y)
-            ]
-        ),
-    ]
-
-    if rank == 0:
-        print(f"# omega: {omega}")
-        print(f"# g: {g}")
-        print(f"# l_x, l_y: {l_x, l_y}")
-        print(f"# n_samples: {n_samples}")
-        print(f"# n_eql: {n_eql}")
-        print(f"# seed: {seed}")
-        print(f"# number of parameters: {wave.n_parameters}\n#")
-
-    driver(walker, ham, parameters, wave, lattice, sampler, n_steps, step_size=0.01)

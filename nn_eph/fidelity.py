@@ -44,8 +44,8 @@ def get_input_k(walker, lattice_shape):
 @dataclass
 @register_pytree_node_class
 class wavefunction:
-    nn_apply_r: Callable = None
-    nn_apply_phi: Callable = None
+    nn_apply_r: Callable
+    nn_apply_phi: Callable
 
     @partial(jax.jit, static_argnums=(0,))
     def calc_overlap(self, parameters, input):

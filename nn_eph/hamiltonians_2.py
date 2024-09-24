@@ -1,13 +1,10 @@
 import os
 
-import numpy as np
-
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, List, Sequence, Tuple
 
-# os.environ['JAX_ENABLE_X64'] = 'True'
 from jax import jit, lax
 from jax import numpy as jnp
 
@@ -44,7 +41,7 @@ class kq:
         wave: Any,
         lattice: Any,
         random_number: float,
-    ) -> Tuple[float, float, Any, float, List, float]:
+    ) -> Tuple:
         """Calculate the local energy and update the walker.
 
         Parameters
@@ -267,7 +264,7 @@ class kq:
 
         # jax.debug.print("new_walker: {}", walker)
 
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -282,7 +279,7 @@ class kq:
         wave: Any,
         lattice: Any,
         random_number: float,
-    ) -> Tuple[float, float, Any, float, List, float]:
+    ) -> Tuple:
         """used for green's function calculations, samples a different function that wave function squared.
 
         Parameters
@@ -542,7 +539,7 @@ class kq:
 
         # jax.debug.print("new_walker: {}", walker)
 
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -794,7 +791,7 @@ class kq_np:
         # jax.debug.print("cd_index: {}", cd_index)
         # jax.debug.print("new_walker: {}", walker)
 
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -2029,10 +2026,3 @@ class long_range_2d:
 
     def __hash__(self):
         return hash((self.omega, self.g, self.zeta, self.triplet))
-
-
-if __name__ == "__main__":
-    phonon_occ = jnp.array([[0, 0, 0], [0, 0, 0]])
-    elec_pos = [(0, 0), (0, 1)]
-    ham = ssh(1.0, 1.0, 1.0)
-    print(ham.energy_diagonal(elec_pos, phonon_occ))

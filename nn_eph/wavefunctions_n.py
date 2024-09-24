@@ -4,12 +4,11 @@ os.environ["JAX_PLATFORM_NAME"] = "cpu"
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Sequence, Tuple
+from typing import Any, Callable, List, Optional, Sequence, Tuple
 
+import jax
 import jax.scipy as jsp
 import numpy as np
-
-# os.environ['JAX_ENABLE_X64'] = 'True'
 from jax import jit, lax
 from jax import numpy as jnp
 from jax import tree_util, vjp, vmap
@@ -21,13 +20,16 @@ from nn_eph import wavefunctions
 class wave_function(ABC):
     """Base class for wave functions"""
 
+    n_parameters: int = 1
+
     @abstractmethod
+    @partial(jit, static_argnums=(0, 3))
     def build_walker_data(self, walker, parameters: Any, lattice: Any) -> Any:
         """Build helpers"""
         pass
 
     @abstractmethod
-    def serialize(self, parameters: Any) -> jnp.ndarray:
+    def serialize(self, parameters: Any) -> jax.Array:
         """Serialize the parameters into a single array
 
         Parameters
@@ -43,14 +45,14 @@ class wave_function(ABC):
         pass
 
     @abstractmethod
-    def update_parameters(self, parameters: Any, update: jnp.ndarray) -> Sequence:
+    def update_parameters(self, parameters: Any, update: jax.Array) -> Sequence:
         """Update the parameters of the wave function
 
         Parameters
         ----------
         parameters : Any
             Parameters of the wave function
-        update : jnp.ndarray
+        update : jax.Array
             Update to the parameters
 
         Returns
@@ -61,6 +63,7 @@ class wave_function(ABC):
         pass
 
     @abstractmethod
+    @partial(jit, static_argnums=(0, 3))
     def calc_overlap(self, walker_data: Any, parameters: Any, lattice: Any) -> complex:
         """Calculate log overlap of the wave function with a walker
 
@@ -81,13 +84,14 @@ class wave_function(ABC):
         pass
 
     @abstractmethod
+    @partial(jit, static_argnums=(0, 4))
     def calc_overlap_ratio(
         self,
         walker_data: Any,
         excitation: Any,
         parameters: Any,
         lattice: Any,
-    ) -> complex:
+    ) -> Any:
         """Calculate the overlap ratio of the wave function with a walker excitation
 
         Parameters
@@ -108,6 +112,7 @@ class wave_function(ABC):
         """
         pass
 
+    @partial(jit, static_argnums=(0, 4))
     def calc_overlap_ratio_t(
         self,
         walker_data: Any,
@@ -120,13 +125,15 @@ class wave_function(ABC):
         """
         return self.calc_overlap_ratio(walker_data, excitation, parameters, lattice)
 
+    @partial(jit, static_argnums=(0, 3))
     def calc_parity(self, walker_data: Any, excitation: Any, lattice: Any):
         """Another workaround for translataion parity issues, used to undo the parity in the overlap ratio calculation."""
         return 1.0
 
+    @partial(jit, static_argnums=(0, 3))
     def calc_overlap_gradient(
         self, walker_data: Any, parameters: Any, lattice: Any
-    ) -> jnp.ndarray:
+    ) -> jax.Array:
         """
         Calculate the gradient of the logarithm of the overlap of the wave function with the walker with respect to the parameters
 
@@ -151,10 +158,6 @@ class wave_function(ABC):
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
-    @abstractmethod
-    def __hash__(self):
-        pass
-
 
 @dataclass
 class product_state(wave_function):
@@ -174,9 +177,9 @@ class product_state(wave_function):
     """
 
     states: Tuple[wave_function]
-    walker_adapters: Tuple[Callable] = None
-    excitation_adapters: Tuple[Callable] = None
-    n_parameters: int = None
+    n_parameters: int = 1
+    walker_adapters: Optional[Tuple[Callable, ...]] = None
+    excitation_adapters: Optional[Tuple[Callable, ...]] = None
 
     def __post_init__(self):
         self.n_parameters = sum([state.n_parameters for state in self.states])
@@ -186,9 +189,7 @@ class product_state(wave_function):
             self.excitation_adapters = (lambda x: (x, 1.0),) * len(self.states)
 
     @partial(jit, static_argnums=(0, 3))
-    def build_walker_data(
-        self, walker: Any, parameters: Sequence, lattice: Any
-    ) -> Sequence:
+    def build_walker_data(self, walker: Any, parameters: Any, lattice: Any) -> Sequence:
         walker_data = [
             state.build_walker_data(
                 self.walker_adapters[i](walker), parameters[i], lattice
@@ -197,7 +198,7 @@ class product_state(wave_function):
         ]
         return walker_data
 
-    def serialize(self, parameters: Sequence) -> jnp.ndarray:
+    def serialize(self, parameters: Sequence) -> jax.Array:
         return jnp.concatenate(
             [
                 state.serialize(parameters_i)
@@ -205,7 +206,7 @@ class product_state(wave_function):
             ]
         )
 
-    def update_parameters(self, parameters: Sequence, update: jnp.ndarray) -> Sequence:
+    def update_parameters(self, parameters: List, update: jax.Array) -> Sequence:
         counter = 0
         for i in range(len(self.states)):
             n_params = self.states[i].n_parameters
@@ -218,7 +219,7 @@ class product_state(wave_function):
     @partial(jit, static_argnums=(0, 3))
     def calc_overlap(
         self, walker_data: Sequence, parameters: Sequence, lattice: Any
-    ) -> complex:
+    ) -> jax.Array:
         return jnp.sum(
             jnp.array(
                 [
@@ -235,7 +236,7 @@ class product_state(wave_function):
         excitation: Any,
         parameters: Sequence,
         lattice: Any,
-    ) -> complex:
+    ) -> jax.Array:
         excitations = [
             self.excitation_adapters[i](excitation) for i in range(len(self.states))
         ]
@@ -262,7 +263,7 @@ class product_state(wave_function):
         excitation: Any,
         parameters: Sequence,
         lattice: Any,
-    ) -> complex:
+    ) -> jax.Array:
         excitations = [
             self.excitation_adapters[i](excitation) for i in range(len(self.states))
         ]
@@ -283,7 +284,7 @@ class product_state(wave_function):
         )
 
     @partial(jit, static_argnums=(0, 3))
-    def calc_parity(self, walker_data: Any, excitation: Any, lattice: Any) -> complex:
+    def calc_parity(self, walker_data: Any, excitation: Any, lattice: Any) -> jax.Array:
         excitations = [
             self.excitation_adapters[i](excitation) for i in range(len(self.states))
         ]
@@ -314,7 +315,7 @@ class product_state(wave_function):
 
 
 @jit
-def walker_adapter_ee(walker: jnp.ndarray) -> jnp.ndarray:
+def walker_adapter_ee(walker: jax.Array) -> jax.Array:
     return walker[:2]
 
 
@@ -342,18 +343,18 @@ class t_projected_state(wave_function):
     state: wave_function
     walker_translator: Callable
     excitation_translator: Callable
-    n_parameters: int = None
-    k: Tuple = None
-    symm_factors: Tuple = None
+    n_parameters: int = 1
+    k: Optional[Tuple] = None
+    symm_factors: Optional[Tuple] = None
 
     def __init__(
         self,
         state: wave_function,
         walker_translator: Callable,
         excitation_translator: Callable,
-        n_parameters: int = None,
-        k: Tuple = None,
-        symm_factors: Tuple = None,
+        n_parameters: Optional[int] = None,
+        k: Optional[Tuple] = None,
+        symm_factors: Optional[Tuple] = None,
         lattice: Any = None,
     ):
         self.state = state
@@ -397,17 +398,20 @@ class t_projected_state(wave_function):
         walker_data["overlap"] = jnp.sum(
             jnp.exp(overlaps + jnp.array(self.symm_factors))
         )
+        walker_data["log_overlap"] = jnp.log(walker_data["overlap"])
         walker_data["walker"] = walker
         return walker_data
 
-    def serialize(self, parameters: Any) -> jnp.ndarray:
+    def serialize(self, parameters: Any) -> jax.Array:
         return self.state.serialize(parameters)
 
-    def update_parameters(self, parameters: Any, update: jnp.ndarray) -> Sequence:
+    def update_parameters(self, parameters: Any, update: jax.Array) -> Sequence:
         return self.state.update_parameters(parameters, update)
 
     @partial(jit, static_argnums=(0, 3))
-    def calc_overlap(self, walker_data: dict, parameters: Any, lattice: Any) -> complex:
+    def calc_overlap(
+        self, walker_data: dict, parameters: Any, lattice: Any
+    ) -> jax.Array:
         overlaps = vmap(self.state.calc_overlap, in_axes=(0, None, None))(
             walker_data["walker_data_list"], parameters, lattice
         )
@@ -458,15 +462,15 @@ class t_projected_state(wave_function):
 
 @partial(jit, static_argnums=(2,))
 def walker_translator(
-    walker: jnp.ndarray, displacement: jnp.ndarray, lattice: Any
-) -> jnp.ndarray:
+    walker: jax.Array, displacement: jax.Array, lattice: Any
+) -> jax.Array:
     """Translate a walker
 
     Parameters
     ----------
-    walker : jnp.ndarray
+    walker : jax.Array
         Walker as occupation number array electrons and possibly phonons
-    displacement : jnp.ndarray
+    displacement : jax.Array
         Displacement to be applied to the walker
 
     Returns
@@ -482,15 +486,15 @@ def walker_translator(
 
 @partial(jit, static_argnums=(2,))
 def excitation_translator_ee(
-    excitation: jnp.ndarray, displacement: jnp.ndarray, lattice: Any
-) -> jnp.ndarray:
+    excitation: jax.Array, displacement: jax.Array, lattice: Any
+) -> jax.Array:
     """Translate an electronic excitation
 
     Parameters
     ----------
-    excitation : jnp.ndarray
+    excitation : jax.Array
         Excitation to be applied (sigma, i, a) for i,sigma -> a,sigma
-    displacement : jnp.ndarray
+    displacement : jax.Array
         Displacement to be applied to the excitation
 
     Returns
@@ -513,16 +517,16 @@ def excitation_translator_ee(
 
 @partial(jit, static_argnums=(2,))
 def excitation_translator_eph(
-    excitation: jnp.ndarray, displacement: jnp.ndarray, lattice: Any
-) -> jnp.ndarray:
+    excitation: jax.Array, displacement: jax.Array, lattice: Any
+) -> dict:
     """Translate an electronic excitation
 
     Parameters
     ----------
-    excitation : jnp.ndarray
+    excitation : jax.Array
         Excitation to be applied, with electronic part (sigma, i, a) for i,sigma -> a,sigma
         and phonon part (pos, phonon_change)
-    displacement : jnp.ndarray
+    displacement : jax.Array
         Displacement to be applied to the excitation
 
     Returns
@@ -559,14 +563,14 @@ class uhf(wave_function):
 
     @partial(jit, static_argnums=(0, 3))
     def build_walker_data(
-        self, walker_occ: jnp.ndarray, parameters: Sequence, lattice: Any
+        self, walker_occ: jax.Array, parameters: Sequence, lattice: Any
     ) -> dict:
         """
         Build helpers for fast local energy evaluation and package with the walker
 
         Parameters
         ----------
-        walker : jnp.ndarray
+        walker : jax.Array
             Walker to be packaged as occupation number array
         parameters : Sequence
             Orbital coefficient matrices
@@ -595,12 +599,12 @@ class uhf(wave_function):
             "overlap": overlap,
         }
 
-    def serialize(self, parameters: Sequence) -> jnp.ndarray:
+    def serialize(self, parameters: Sequence) -> jax.Array:
         return jnp.concatenate(
             [parameters_i.reshape(-1) for parameters_i in parameters]
         )
 
-    def update_parameters(self, parameters: Sequence, update: jnp.ndarray) -> Sequence:
+    def update_parameters(self, parameters: List, update: jax.Array) -> Sequence:
         for i in range(len(parameters)):
             parameters[i] = parameters[i] + update[
                 parameters[i].size * i : parameters[i].size * (i + 1)
@@ -610,7 +614,7 @@ class uhf(wave_function):
     @partial(jit, static_argnums=(0, 3))
     def calc_overlap(
         self, walker_data: dict, parameters: Sequence, lattice: Any
-    ) -> complex:
+    ) -> jax.Array:
         walker = walker_data["walker"]
         overlap_up = jnp.linalg.det(parameters[0][walker[0], :])
         overlap_dn = jnp.linalg.det(parameters[1][walker[1], :])
@@ -737,7 +741,7 @@ class complex_uhf(uhf):
     @partial(jit, static_argnums=(0, 3))
     def calc_overlap(
         self, walker_data: dict, parameters: Sequence, lattice: Any
-    ) -> complex:
+    ) -> jax.Array:
         walker = walker_data["walker"]
         parameters_0 = parameters[0] + 1.0j * parameters[1]
         parameters_1 = parameters[2] + 1.0j * parameters[3]
@@ -780,7 +784,7 @@ class kuhf(uhf):
     @partial(jit, static_argnums=(0, 3))
     def calc_overlap(
         self, walker_data: dict, parameters: Sequence, lattice: Any
-    ) -> complex:
+    ) -> jax.Array:
         walker = walker_data["walker"]
         parameters_0 = parameters[0] + 1.0j * parameters[1]
         parameters_1 = parameters[2] + 1.0j * parameters[3]
@@ -793,7 +797,7 @@ class kuhf(uhf):
     def calc_overlap_ratio(
         self,
         walker_data: dict,
-        excitation: jnp.ndarray,
+        excitation: jax.Array,
         parameters: Sequence,
         lattice: Any,
     ) -> complex:
@@ -835,7 +839,7 @@ class ghf(uhf):
     @partial(jit, static_argnums=(0, 3))
     def calc_overlap(
         self, walker_data: dict, parameters: Sequence, lattice: Any
-    ) -> complex:
+    ) -> jax.Array:
         walker = walker_data["walker_ghf"]
         overlap = jnp.linalg.det(parameters[0][walker, :])
         return jnp.log(overlap + 0.0j)
@@ -844,7 +848,7 @@ class ghf(uhf):
     def calc_overlap_ratio(
         self,
         walker_data: dict,
-        excitation: jnp.ndarray,
+        excitation: jax.Array,
         parameters: Sequence,
         lattice: Any,
     ) -> complex:
@@ -886,7 +890,7 @@ class kghf(ghf):
     @partial(jit, static_argnums=(0, 3))
     def calc_overlap(
         self, walker_data: dict, parameters: Sequence, lattice: Any
-    ) -> complex:
+    ) -> jax.Array:
         walker = walker_data["walker_ghf"]
         parameters_0 = parameters[0] + 1.0j * parameters[1]
         overlap = jnp.linalg.det(parameters_0[walker, :])
@@ -896,7 +900,7 @@ class kghf(ghf):
     def calc_overlap_ratio(
         self,
         walker_data: dict,
-        excitation: jnp.ndarray,
+        excitation: jax.Array,
         parameters: Sequence,
         lattice: Any,
     ) -> complex:
@@ -940,20 +944,20 @@ class nn(wave_function):
 
     @partial(jit, static_argnums=(0, 3))
     def build_walker_data(
-        self, walker: jnp.ndarray, parameters: Any, lattice: Any
+        self, walker: jax.Array, parameters: Any, lattice: Any
     ) -> dict:
         walker_data = {"walker_occ": walker}
         walker_data["log_overlap"] = self.calc_overlap(walker_data, parameters, lattice)
         return walker_data
 
-    def serialize(self, parameters: Any) -> jnp.ndarray:
+    def serialize(self, parameters: Any) -> jax.Array:
         flat_tree = tree_util.tree_flatten(parameters)[0]
         serialized = jnp.reshape(flat_tree[0], (-1))
         for params in flat_tree[1:]:
             serialized = jnp.concatenate((serialized, jnp.reshape(params, -1)))
         return serialized
 
-    def update_parameters(self, parameters: Any, update: jnp.ndarray) -> Any:
+    def update_parameters(self, parameters: Any, update: jax.Array) -> Any:
         flat_tree, tree = tree_util.tree_flatten(parameters)
         counter = 0
         for i in range(len(flat_tree)):
@@ -964,7 +968,9 @@ class nn(wave_function):
         return tree_util.tree_unflatten(tree, flat_tree)
 
     @partial(jit, static_argnums=(0, 3))
-    def calc_overlap(self, walker_data: dict, parameters: Any, lattice: Any) -> complex:
+    def calc_overlap(
+        self, walker_data: dict, parameters: Any, lattice: Any
+    ) -> jax.Array:
         inputs = self.input_adapter(walker_data["walker_occ"], lattice)
         outputs = jnp.array(
             vmap(self.nn_apply, in_axes=(None, 0))(parameters, inputs + 0.0j),
@@ -979,7 +985,7 @@ class nn(wave_function):
         excitation: Any,
         parameters: Any,
         lattice: Any,
-    ) -> complex:
+    ) -> jax.Array:
         """No fast overlap ratio, so simply calculates new overlaps"""
         new_walker = self.apply_excitation(
             walker_data["walker_occ"], excitation, lattice
@@ -1006,15 +1012,15 @@ class nn(wave_function):
 
 @partial(jit, static_argnums=(2,))
 def apply_excitation_ee(
-    walker: jnp.ndarray, excitation: jnp.ndarray, lattice: Any
-) -> jnp.ndarray:
+    walker: jax.Array, excitation: jax.Array, lattice: Any
+) -> jax.Array:
     """Apply electron excitation to an electronic walker
 
     Parameters
     ----------
-    walker : jnp.ndarray
+    walker : jax.Array
         Electronic walker as occupation number array [elec_occ_up, elec_occ_dn]
-    excitation : jnp.ndarray
+    excitation : jax.Array
         Excitation to be applied (sigma, i, a) for i,sigma -> a,sigma
     lattice : Lattice
         Lattice object
@@ -1056,6 +1062,127 @@ def input_adapter_t(walker, lattice):
 
 
 @dataclass
+class nn_complex(wave_function):
+    """Complex neural network wave function
+
+    Attributes
+    ----------
+    nn_apply_r : Callable
+        Neural network function for the absolute value of the amplitude
+    nn_apply_phi: Callable
+        Neural network function for the phase of the amplitude
+    apply_excitation : Callable
+        Function to apply an excitation to the walker
+    n_parameters : int
+        Number of parameters in the wave function
+    input_adapter : Callable
+        Function to get the input for the NN
+    """
+
+    nn_apply_r: Callable
+    nn_apply_phi: Callable
+    n_parameters: int
+    apply_excitation: Callable = lambda x, y, z: x
+    input_adapter: Callable = lambda x, y: x.reshape((1, *x.shape))
+    mask: Tuple = (1.0, 1.0)
+
+    @partial(jit, static_argnums=(0, 3))
+    def build_walker_data(
+        self, walker: jax.Array, parameters: Any, lattice: Any
+    ) -> dict:
+        walker_data = {"walker_occ": walker}
+        walker_data["log_overlap"] = self.calc_overlap(walker_data, parameters, lattice)
+        return walker_data
+
+    def serialize(self, parameters: Any) -> jax.Array:
+        # nn_r
+        flat_tree = tree_util.tree_flatten(parameters[0])[0]
+        serialized_1 = jnp.reshape(flat_tree[0], (-1))
+        for params in flat_tree[1:]:
+            serialized_1 = jnp.concatenate((serialized_1, jnp.reshape(params, -1)))
+
+        # nn_phi
+        flat_tree = tree_util.tree_flatten(parameters[1])[0]
+        serialized_2 = jnp.reshape(flat_tree[0], (-1))
+        for params in flat_tree[1:]:
+            serialized_2 = jnp.concatenate((serialized_2, jnp.reshape(params, -1)))
+
+        serialized = jnp.concatenate((serialized_1, serialized_2))
+        return serialized
+
+    def update_parameters(self, parameters: Any, update: jax.Array) -> Any:
+        flat_tree, tree = tree_util.tree_flatten(parameters[0])
+        counter = 0
+        for i in range(len(flat_tree)):
+            flat_tree[i] += self.mask[0] * update[
+                counter : counter + flat_tree[i].size
+            ].reshape(flat_tree[i].shape)
+            counter += flat_tree[i].size
+        parameters[0] = tree_util.tree_unflatten(tree, flat_tree)
+
+        flat_tree, tree = tree_util.tree_flatten(parameters[1])
+        for i in range(len(flat_tree)):
+            flat_tree[i] += self.mask[1] * update[
+                counter : counter + flat_tree[i].size
+            ].reshape(flat_tree[i].shape)
+            counter += flat_tree[i].size
+        parameters[1] = tree_util.tree_unflatten(tree, flat_tree)
+        return parameters
+
+    @partial(jit, static_argnums=(0, 3))
+    def calc_overlap(
+        self, walker_data: dict, parameters: Any, lattice: Any
+    ) -> jax.Array:
+        inputs = self.input_adapter(walker_data["walker_occ"], lattice)
+        outputs_r = jnp.array(
+            vmap(self.nn_apply_r, in_axes=(None, 0))(parameters[0], inputs + 0.0j),
+            dtype="complex64",
+        )
+        outputs_phi = jnp.array(
+            vmap(self.nn_apply_phi, in_axes=(None, 0))(parameters[1], inputs + 0.0j),
+            dtype="complex64",
+        )
+        return jsp.special.logsumexp(outputs_r + 1.0j * outputs_phi, axis=0)[0]
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_ratio(
+        self,
+        walker_data: dict,
+        excitation: Any,
+        parameters: Any,
+        lattice: Any,
+    ) -> jax.Array:
+        """No fast overlap ratio, so simply calculates new overlaps"""
+        new_walker = self.apply_excitation(
+            walker_data["walker_occ"], excitation, lattice
+        )
+        inputs = self.input_adapter(new_walker, lattice)
+        outputs_r = jnp.array(
+            vmap(self.nn_apply_r, in_axes=(None, 0))(parameters, inputs + 0.0j),
+            dtype="complex64",
+        )
+        outputs_phi = jnp.array(
+            vmap(self.nn_apply_phi, in_axes=(None, 0))(parameters, inputs + 0.0j),
+            dtype="complex64",
+        )
+        return jnp.exp(
+            jsp.special.logsumexp(outputs_r + 1.0j * outputs_phi, axis=0)[0]
+            - walker_data["log_overlap"]
+        )
+
+    def __hash__(self):
+        return hash(
+            (
+                self.n_parameters,
+                self.nn_apply_r,
+                self.nn_apply_phi,
+                self.apply_excitation,
+                self.input_adapter,
+            )
+        )
+
+
+@dataclass
 class nn_jastrow_n(wave_function):
     """
     Neural net electron phonon jastrow on top of an electronic mean field state
@@ -1081,7 +1208,7 @@ class nn_jastrow_n(wave_function):
     nn_apply_phi: Callable
     reference: Any
     n_parameters: int
-    mask: Sequence = None
+    mask: Optional[jax.Array] = None
     get_input: Callable = wavefunctions.get_input_r
 
     def __post_init__(self):
@@ -1119,7 +1246,7 @@ class nn_jastrow_n(wave_function):
             "ref_walker_data": ref_walker_data,
         }
 
-    def serialize(self, parameters: Sequence) -> jnp.ndarray:
+    def serialize(self, parameters: Sequence) -> jax.Array:
         """
         Serialize the parameters into a single array
 
@@ -1150,7 +1277,7 @@ class nn_jastrow_n(wave_function):
         )
         return serialized
 
-    def update_parameters(self, parameters: Sequence, update: jnp.ndarray) -> Sequence:
+    def update_parameters(self, parameters: List, update: jax.Array) -> Sequence:
         """
         Update the parameters of the wave function
 
@@ -1158,7 +1285,7 @@ class nn_jastrow_n(wave_function):
         ----------
         parameters : Sequence
             Parameters of the wave function
-        update : jnp.ndarray
+        update : jax.Array
             Update to the parameters
 
         Returns
@@ -1227,7 +1354,7 @@ class nn_jastrow_n(wave_function):
     def calc_overlap_ratio(
         self,
         walker_data: dict,
-        excitation: jnp.ndarray,
+        excitation: jax.Array,
         parameters: Sequence,
         lattice: Any,
     ) -> complex:
@@ -1238,7 +1365,7 @@ class nn_jastrow_n(wave_function):
         ----------
         walker_data : dict
             Helper data for the walker
-        excitation : jnp.ndarray
+        excitation : jax.Array
             Excitation to be performed on the walker (sigma, i, a) for i,sigma -> a,sigma
         parameters : Sequence
             Parameters of the wave function

@@ -1,13 +1,10 @@
 import os
 
-import numpy as np
-
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, Sequence
 
-# os.environ['JAX_ENABLE_X64'] = 'True'
 from jax import jit, lax
 from jax import numpy as jnp
 
@@ -131,7 +128,7 @@ class kq:
         )
         walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
 
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -266,7 +263,7 @@ class kq:
         )
         walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
 
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -440,7 +437,7 @@ class kq_ne_np:
         )
         walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
 
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -618,7 +615,7 @@ class kq_ne_np:
         )
         walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
 
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -643,14 +640,16 @@ class holstein:
 
         # ke
         # carry: [ energy ]
-        def scanned_fun(carry, x):
+        def scanned_fun_ke(carry, x):
             new_overlap = wave.calc_overlap(tuple(x), phonon_occ, parameters, lattice)
             ratio = jnp.exp(new_overlap - overlap)
             carry[0] -= ratio
             return carry, ratio
 
         ke = 0.0j
-        [ke], _ = lax.scan(scanned_fun, [ke], lattice.get_nearest_neighbors(elec_pos))
+        [ke], _ = lax.scan(
+            scanned_fun_ke, [ke], lattice.get_nearest_neighbors(elec_pos)
+        )
 
         # phonon_numbers
         phonon_numbers = phonon_occ.copy()
@@ -789,7 +788,7 @@ class holstein:
         )
 
         walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -826,14 +825,14 @@ class long_range:
         nearest_neighbors = lattice.get_nearest_neighbors(elec_pos)
         # carry: [ energy ]
 
-        def scanned_fun(carry, x):
+        def scanned_fun_ke(carry, x):
             new_overlap = wave.calc_overlap(tuple(x), phonon_occ, parameters, lattice)
             ratio = jnp.exp(new_overlap - overlap)
             carry[0] -= ratio
             return carry, ratio
 
         [energy], hop_ratios = lax.scan(
-            scanned_fun, [energy], lattice.get_nearest_neighbors(elec_pos)
+            scanned_fun_ke, [energy], lattice.get_nearest_neighbors(elec_pos)
         )
 
         # e_ph coupling
@@ -919,7 +918,7 @@ class long_range:
         )
 
         walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -943,14 +942,16 @@ class bond_ssh:
 
         # ke
         # carry: [ energy ]
-        def scanned_fun(carry, x):
+        def scanned_fun_ke(carry, x):
             new_overlap = wave.calc_overlap(tuple(x), phonon_occ, parameters, lattice)
             ratio = jnp.exp(new_overlap - overlap)
             carry[0] -= ratio
             return carry, ratio
 
         ke = 0.0j
-        [ke], _ = lax.scan(scanned_fun, [ke], lattice.get_nearest_neighbors(elec_pos))
+        [ke], _ = lax.scan(
+            scanned_fun_ke, [ke], lattice.get_nearest_neighbors(elec_pos)
+        )
 
         # phonon_numbers
         phonon_numbers = phonon_occ[0].copy()
@@ -1092,7 +1093,7 @@ class bond_ssh:
         ).reshape(walker[1].shape)
 
         walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -1233,7 +1234,7 @@ class ssh:
         ).reshape(walker[1].shape)
         walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
 
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -1244,60 +1245,3 @@ class ssh:
 
     def __hash__(self):
         return hash((self.omega, self.g, self.max_n_phonons))
-
-
-if __name__ == "__main__":
-    import lattices
-    import models
-    import wavefunctions
-
-    l_x, l_y, l_z = 3, 3, 3
-    n_sites = l_x * l_y * l_z
-    # n_bands = 2
-    lattice = lattices.three_dimensional_grid(l_x, l_y, l_z)
-
-    np.random.seed(0)
-    parameters = jnp.array(np.random.rand(len(lattice.shell_distances)))
-    wave = wavefunctions.merrifield(parameters.size)
-    phonon_occ = jnp.array(
-        [
-            [[np.random.randint(2) for _ in range(l_x)] for _ in range(l_y)]
-            for _ in range(l_z)
-        ]
-    )
-    walker = [(0, 0, 0), phonon_occ]
-    random_number = 0.9
-    ham = holstein(1.0, 1.0)
-    (
-        energy,
-        qp_weight,
-        overlap_gradient,
-        weight,
-        walker,
-        overlap,
-    ) = ham.local_energy_and_update(walker, parameters, wave, lattice, random_number)
-    print(energy)
-
-    # model_r = models.MLP([5, 1])
-    # model_phi = models.MLP([5, 1])
-    # model_input = jnp.zeros((1 + n_bands)*n_sites)
-    # nn_parameters_r = model_r.init(random.PRNGKey(0), model_input, mutable=True)
-    # nn_parameters_phi = model_phi.init(random.PRNGKey(1), model_input, mutable=True)
-    # n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters_r)) + sum(x.size for x in tree_util.tree_leaves(nn_parameters_phi))
-    # parameters = [ nn_parameters_r, nn_parameters_phi ]
-    # lattice_shape = (n_bands, *lattice.shape)
-    # wave = wavefunctions.nn_complex_n(model_r.apply, model_phi.apply, n_nn_parameters, lattice_shape)
-#
-# walker = [ (0, (0,)), jnp.zeros(lattice.shape) ]
-#
-# omega_q = tuple(1. for _ in range(n_sites))
-# e_n_k = (tuple(-2. * np.cos(2. * np.pi * k / n_sites) for k in range(n_sites)),
-#         tuple(-2. * np.cos(2. * np.pi * k / n_sites) for k in range(n_sites)))
-# g_mn_kq = ((tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites)),
-#            tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites))),
-#           (tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites)),
-#            tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites))))
-#
-# ham = kq_ne(omega_q, e_n_k, g_mn_kq)
-# random_number = 0.9
-# energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker, parameters, wave, lattice, random_number)

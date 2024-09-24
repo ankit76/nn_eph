@@ -3,14 +3,13 @@ import os
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Sequence, Tuple
+from typing import Any, Sequence, Tuple
 
-# os.environ['JAX_ENABLE_X64'] = 'True'
 import jax
 from jax import jit, lax
 from jax import numpy as jnp
 
-from nn_eph.wavefunctions_n import wave_function
+from nn_eph.wavefunctions_n import t_projected_state, wave_function
 
 
 @dataclass
@@ -45,12 +44,12 @@ class hubbard:
         return (walker[0] + walker[1]).reshape(-1)
 
     @partial(jit, static_argnums=(0,))
-    def double_occupancy(self, walker: Sequence) -> float:
+    def double_occupancy(self, walker: Sequence) -> jax.Array:
         """Calculate the double occupancy"""
         return jnp.sum(walker[0] * walker[1])
 
     @partial(jit, static_argnums=(0,))
-    def diagonal_energy(self, walker: Sequence) -> float:
+    def diagonal_energy(self, walker: Sequence) -> jax.Array:
         """Calculate the diagonal energy of a walker"""
         return self.u * jnp.sum(walker[0] * walker[1])
 
@@ -67,7 +66,7 @@ class hubbard:
     @partial(jit, static_argnums=(0, 3, 4))
     def local_energy_and_update(
         self,
-        walker: Sequence,
+        walker: jax.Array,
         parameters: Any,
         wave: Any,
         lattice: Any,
@@ -174,7 +173,7 @@ class hubbard:
 
         # jax.debug.print("new_walker: {}", walker)
 
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -191,7 +190,7 @@ class hubbard:
     @partial(jit, static_argnums=(0, 3, 4))
     def local_energy_and_update_lr(
         self,
-        walker: Sequence,
+        walker: jax.Array,
         parameters: Any,
         wave: Any,
         lattice: Any,
@@ -333,7 +332,7 @@ class hubbard:
 
         # jax.debug.print("new_walker: {}", walker)
 
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -395,7 +394,7 @@ class hubbard_holstein:
         return jnp.array([sz_q, c_q])
 
     @partial(jit, static_argnums=(0,))
-    def diagonal_energy(self, walker: Sequence) -> float:
+    def diagonal_energy(self, walker: Sequence) -> jax.Array:
         """Calculate the diagonal energy of a walker
 
         Parameters
@@ -416,7 +415,7 @@ class hubbard_holstein:
     @partial(jit, static_argnums=(0, 3, 4))
     def local_energy_and_update(
         self,
-        walker: Sequence,
+        walker: jax.Array,
         parameters: Any,
         wave: Any,
         lattice: Any,
@@ -498,7 +497,8 @@ class hubbard_holstein:
         excitation_ee = {}
         excitation_ee["sm_idx"] = jnp.array((2, 0, 0))
         excitation_ee["idx"] = jnp.array((2, 0, 0))
-        excitation = {"ee": excitation_ee}
+        excitation = {}
+        excitation["ee"] = excitation_ee
 
         # scan over lattice sites
         # carry: [ energy, site_idx ]
@@ -603,7 +603,7 @@ class hubbard_holstein:
 
         # jax.debug.print("new_walker: {}", walker)
 
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -620,9 +620,9 @@ class hubbard_holstein:
     @partial(jit, static_argnums=(0, 3, 4))
     def local_energy_and_update_lr(
         self,
-        walker: Sequence,
+        walker: jax.Array,
         parameters: Any,
-        wave: wave_function,
+        wave: t_projected_state,
         lattice: Any,
         random_number: float,
         parameters_copy: Any,
@@ -711,7 +711,8 @@ class hubbard_holstein:
         excitation_ee = {}
         excitation_ee["sm_idx"] = jnp.array((2, 0, 0))
         excitation_ee["idx"] = jnp.array((2, 0, 0))
-        excitation = {"ee": excitation_ee}
+        excitation = {}
+        excitation["ee"] = excitation_ee
 
         # scan over lattice sites
         # carry: [ energy, site_idx ]
@@ -842,7 +843,7 @@ class hubbard_holstein:
 
         # jax.debug.print("new_walker: {}", walker)
 
-        energy = jnp.where(jnp.isnan(energy), 0.0, energy)
+        energy = jax.Array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
@@ -860,69 +861,3 @@ class hubbard_holstein:
         return hash(
             (self.omega, self.g, self.u, self.n_orbs, self.n_elec, self.max_n_phonons)
         )
-
-
-if __name__ == "__main__":
-    import lattices
-    import models
-    import numpy as np
-    import wavefunctions
-
-    # l_x, l_y, l_z = 3, 3, 3
-    # n_sites = l_x * l_y * l_z
-    ##n_bands = 2
-    # lattice = lattices.three_dimensional_grid(l_x, l_y, l_z)
-
-    l_x, l_y = 4, 4
-    n_sites = l_x * l_y
-    lattice = lattices.two_dimensional_grid(l_x, l_y)
-    ham = hubbard_holstein(1.0, 1.0, 1.0, 16, (8, 8))
-    np.random.seed(0)
-    elec_occ_up = jnp.array([[1, 0, 1, 0], [1, 1, 0, 0], [0, 1, 1, 0], [0, 1, 0, 1]])
-    elec_occ_dn = jnp.array([[0, 0, 1, 0], [1, 0, 0, 1], [1, 0, 1, 0], [0, 1, 1, 1]])
-    elec_occ_dn = jnp.array(
-        [[np.random.randint(2) for _ in range(l_x)] for _ in range(l_y)]
-    )
-    phonon_occ = jnp.array(
-        [[np.random.randint(2) for _ in range(l_x)] for _ in range(l_y)]
-    )
-    walker = [jnp.array([elec_occ_up, elec_occ_dn]), phonon_occ]
-    energy = ham.diagonal_energy(walker)
-    wave = wavefunctions.ghf(16, (8, 8))
-    parameters = jnp.array(np.random.rand(32, 16))
-    overlap = wave.calc_overlap(walker[0], parameters, lattice)
-    ham.local_energy_and_update(walker, parameters, wave, lattice, 0.9)
-    # print(overlap)
-
-    # parameters = jnp.array(np.random.rand(len(lattice.shell_distances)))
-    # wave = wavefunctions.merrifield(parameters.size)
-    # phonon_occ = jnp.array([[[ np.random.randint(2) for _ in range(l_x) ] for _ in range(l_y) ] for _ in range#(l_z)])
-    # walker = [ (0, 0, 0), phonon_occ ]
-    # random_number = 0.9
-    # ham = hubbard_holstein(1., 1.)
-    # energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker, #parameters, wave, lattice, random_number)
-    # print(energy)
-
-    # model_r = models.MLP([5, 1])
-    # model_phi = models.MLP([5, 1])
-    # model_input = jnp.zeros((1 + n_bands)*n_sites)
-    # nn_parameters_r = model_r.init(random.PRNGKey(0), model_input, mutable=True)
-    # nn_parameters_phi = model_phi.init(random.PRNGKey(1), model_input, mutable=True)
-    # n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters_r)) + sum(x.size for x in tree_util.tree_leaves(nn_parameters_phi))
-    # parameters = [ nn_parameters_r, nn_parameters_phi ]
-    # lattice_shape = (n_bands, *lattice.shape)
-    # wave = wavefunctions.nn_complex_n(model_r.apply, model_phi.apply, n_nn_parameters, lattice_shape)
-#
-# walker = [ (0, (0,)), jnp.zeros(lattice.shape) ]
-#
-# omega_q = tuple(1. for _ in range(n_sites))
-# e_n_k = (tuple(-2. * np.cos(2. * np.pi * k / n_sites) for k in range(n_sites)),
-#         tuple(-2. * np.cos(2. * np.pi * k / n_sites) for k in range(n_sites)))
-# g_mn_kq = ((tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites)),
-#            tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites))),
-#           (tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites)),
-#            tuple(tuple(1./n_sites**0.5 for _ in range(n_sites)) for _ in range(n_sites))))
-#
-# ham = kq_ne(omega_q, e_n_k, g_mn_kq)
-# random_number = 0.9
-# energy, qp_weight, overlap_gradient, weight, walker, overlap = ham.local_energy_and_update(walker, parameters, wave, lattice, random_number)

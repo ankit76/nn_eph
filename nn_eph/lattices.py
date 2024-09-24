@@ -3,7 +3,7 @@ import os
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 from dataclasses import dataclass
 from functools import partial
-from typing import Sequence
+from typing import Optional, Sequence
 
 from jax import jit, lax
 from jax import numpy as jnp
@@ -84,9 +84,9 @@ def frobenius_0(n, coefficients, target):
 @register_pytree_node_class
 class one_dimensional_chain:
     n_sites: int
-    shape: tuple = None
-    sites: Sequence = None
-    bonds: Sequence = None
+    shape: Optional[tuple] = None
+    sites: Optional[Sequence] = None
+    bonds: Optional[Sequence] = None
     hop_signs: Sequence = (1.0, -1.0)
     coord_num: int = 2
 
@@ -94,15 +94,7 @@ class one_dimensional_chain:
         self.shape = (self.n_sites,)
         self.sites = tuple([(i,) for i in range(self.n_sites)])
         self.bonds = (
-            tuple(
-                [
-                    (
-                        0,
-                        i,
-                    )
-                    for i in range(self.n_sites)
-                ]
-            )
+            tuple([(0, i) for i in range(self.n_sites)])
             if self.n_sites > 2
             else tuple([(0, 0)])
         )
@@ -126,10 +118,11 @@ class one_dimensional_chain:
         )
         return polaron_basis
 
+    @partial(jit, static_argnums=(0,))
     def get_marshall_sign(self, walker):
-        if isinstance(walker, list):
-            # TODO: this is a bit hacky
-            walker = walker[0]
+        # if isinstance(walker, list):
+        #     # TODO: this is a bit hacky
+        #     walker = walker[0]
         walker_a = walker[::2]
         return (-1) ** jnp.sum(jnp.where(walker_a > 0, 1, 0))
 
@@ -224,10 +217,10 @@ class one_dimensional_chain:
         )
 
     def __hash__(self):
-        return hash((self.n_sites, self.shape, self.sites, self.bonds))
+        return hash(tuple(self.__dict__.values()))
 
     def tree_flatten(self):
-        return (), (self.n_sites, self.shape, self.sites, self.bonds, self.coord_num)
+        return (), tuple(self.__dict__.values())
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
@@ -239,12 +232,12 @@ class one_dimensional_chain:
 class two_dimensional_grid:
     l_x: int
     l_y: int
-    shape: tuple = None
-    shell_distances: Sequence = None
-    bond_shell_distances: Sequence = None
-    sites: Sequence = None
-    bonds: Sequence = None
-    n_sites: int = None
+    shape: Optional[tuple] = None
+    shell_distances: Optional[Sequence] = None
+    bond_shell_distances: Optional[Sequence] = None
+    sites: Optional[Sequence] = None
+    bonds: Optional[Sequence] = None
+    n_sites: Optional[int] = None
     hop_signs: Sequence = (-1.0, -1.0, 1.0, 1.0)
     coord_num: int = 4
 
@@ -295,6 +288,7 @@ class two_dimensional_grid:
 
     def make_polaron_basis(self, max_n_phonons):
         phonon_basis = make_phonon_basis(self.l_x * self.l_y, max_n_phonons)
+        assert self.sites is not None
         polaron_basis = tuple(
             [site, phonon_state.reshape((self.l_y, self.l_x))]
             for site in self.sites
@@ -302,10 +296,11 @@ class two_dimensional_grid:
         )
         return polaron_basis
 
+    @partial(jit, static_argnums=(0,))
     def get_marshall_sign(self, walker):
-        if isinstance(walker, list):
-            # TODO: this is a bit hacky
-            walker = walker[0]
+        # if isinstance(walker, list):
+        #     # TODO: this is a bit hacky
+        #     walker = walker[0]
         walker_a = walker[::2, ::2]
         return (-1) ** jnp.sum(jnp.where(walker_a > 0, 1, 0))
 
@@ -457,15 +452,53 @@ class two_dimensional_grid:
         return jnp.min(jnp.array([dist_1, dist_2])), lr
 
     def __hash__(self):
+        return hash(tuple(self.__dict__.values()))
+
+    def tree_flatten(self):
+        return (), tuple(self.__dict__.values())
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(*aux_data)
+
+
+@dataclass
+@register_pytree_node_class
+class triangular_grid:
+    l_x: int  # height
+    l_y: int  # width
+    shape: Optional[tuple] = None
+    sites: Optional[Sequence] = None
+    n_sites: Optional[int] = None
+    coord_num: int = 6
+
+    def __post_init__(self):
+        self.shape = (self.l_y, self.l_x)
+        self.n_sites = self.l_x * self.l_y
+        self.sites = tuple(
+            [(i // self.l_y, i % self.l_y) for i in range(self.l_x * self.l_y)]
+        )
+
+    def get_site_num(self, pos):
+        return pos[1] + self.l_y * pos[0]
+
+    # @partial(jit, static_argnums=(0,))
+    def get_nearest_neighbors(self, pos):
+        n1 = (pos[0], (pos[1] + 1) % self.l_y)
+        n2 = ((pos[0] + 1) % self.l_x, pos[1])
+        n3 = (pos[0], (pos[1] - 1) % self.l_y)
+        n4 = ((pos[0] - 1) % self.l_x, pos[1])
+        n5 = ((pos[0] + 1) % self.l_x, (pos[1] + 1) % self.l_y)
+        n6 = ((pos[0] - 1) % self.l_x, (pos[1] - 1) % self.l_y)
+        return jnp.array([n1, n2, n3, n4, n5, n6])
+
+    def __hash__(self):
         return hash(
             (
                 self.l_x,
                 self.l_y,
                 self.shape,
-                self.shell_distances,
-                self.bond_shell_distances,
                 self.sites,
-                self.bonds,
                 self.coord_num,
             )
         )
@@ -475,10 +508,7 @@ class two_dimensional_grid:
             self.l_x,
             self.l_y,
             self.shape,
-            self.shell_distances,
-            self.bond_shell_distances,
             self.sites,
-            self.bonds,
             self.coord_num,
         )
 
@@ -493,11 +523,11 @@ class three_dimensional_grid:
     l_x: int
     l_y: int
     l_z: int
-    shape: tuple = None
-    shell_distances: Sequence = None
-    sites: Sequence = None
-    bonds: Sequence = None
-    n_sites: int = None
+    shape: Optional[tuple] = None
+    shell_distances: Optional[Sequence] = None
+    sites: Optional[Sequence] = None
+    bonds: Optional[Sequence] = None
+    n_sites: Optional[int] = None
     coord_num: int = 6
 
     def __post_init__(self):
@@ -527,6 +557,7 @@ class three_dimensional_grid:
 
     def make_polaron_basis(self, max_n_phonons):
         phonon_basis = make_phonon_basis(self.l_x * self.l_y * self.l_z, max_n_phonons)
+        assert self.sites is not None
         polaron_basis = tuple(
             [site, phonon_state.reshape((self.l_x, self.l_y, self.l_z))]
             for site in self.sites
@@ -536,6 +567,7 @@ class three_dimensional_grid:
 
     def make_polaron_basis_n(self, n_bands, max_n_phonons):
         phonon_basis = make_phonon_basis(self.l_x * self.l_y * self.l_z, max_n_phonons)
+        assert self.sites is not None
         electronic_basis = tuple(
             [(n, site) for n in range(n_bands) for site in self.sites]
         )
@@ -598,30 +630,10 @@ class three_dimensional_grid:
         return jnp.array(neighbors)
 
     def __hash__(self):
-        return hash(
-            (
-                self.l_x,
-                self.l_y,
-                self.l_z,
-                self.shape,
-                self.shell_distances,
-                self.sites,
-                self.bonds,
-                self.coord_num,
-            )
-        )
+        return hash(tuple(self.__dict__.values()))
 
     def tree_flatten(self):
-        return (), (
-            self.l_x,
-            self.l_y,
-            self.l_z,
-            self.shape,
-            self.shell_distances,
-            self.sites,
-            self.bonds,
-            self.coord_num,
-        )
+        return (), tuple(self.__dict__.values())
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):

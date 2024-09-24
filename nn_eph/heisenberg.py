@@ -3,25 +3,39 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
+import jax
 from jax import jit, lax
 from jax import numpy as jnp
 from jax import vmap
 
+from nn_eph.wavefunctions_n import t_projected_state, wave_function
+
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
-# os.environ['JAX_ENABLE_X64'] = 'True'
-# os.environ['JAX_DISABLE_JIT'] = 'True'
 
 
 @dataclass
 class heisenberg:
     j: float = 1.0
 
+    @partial(jit, static_argnums=(0, 2))
+    def get_marshall_sign(self, walker: jax.Array, lattice):
+        return 1.0  # lattice.get_marshall_sign(walker)
+
     @partial(jit, static_argnums=(0, 3, 4))
-    def local_energy_and_update(self, walker, parameters, wave, lattice, random_number):
+    def local_energy_and_update(
+        self,
+        walker: jax.Array,
+        parameters: Any,
+        wave: wave_function,
+        lattice,
+        random_number: float,
+    ):
         n_bonds = len(lattice.bonds)
 
-        overlap = wave.calc_overlap(walker, parameters, lattice)
-        overlap_gradient = wave.calc_overlap_gradient(walker, parameters, lattice)
+        walker_data = wave.build_walker_data(walker, parameters, lattice)
+        sign = self.get_marshall_sign(walker, lattice)
+        overlap = walker_data["log_overlap"] + jnp.log(sign + 0.0j)
+        overlap_gradient = wave.calc_overlap_gradient(walker_data, parameters, lattice)
         qp_weight = 0.0
 
         def z_ene(bond):
@@ -40,22 +54,38 @@ class heisenberg:
             # s1+ s2-
             new_walker = walker.at[i1].set(0.5)
             new_walker = new_walker.at[i2].set(-0.5)
-            new_overlap = (
+            new_walker_data = wave.build_walker_data(new_walker, parameters, lattice)
+            # new_overlap = (
+            #     (walker[i1] == -0.5)
+            #     * (walker[i2] == 0.5)
+            #     * wave.calc_overlap(new_walker, parameters, lattice)
+            # )
+            new_overlap = new_walker_data["log_overlap"]
+            new_sign = self.get_marshall_sign(new_walker, lattice)
+            ratio_1 = (
                 (walker[i1] == -0.5)
                 * (walker[i2] == 0.5)
-                * wave.calc_overlap(new_walker, parameters, lattice)
+                * jnp.exp(new_overlap - overlap)
+                * new_sign
             )
-            ratio_1 = jnp.exp(new_overlap - overlap)
 
             # s1- s2+
             new_walker = walker.at[i1].set(-0.5)
             new_walker = new_walker.at[i2].set(0.5)
-            new_overlap = (
+            new_walker_data = wave.build_walker_data(new_walker, parameters, lattice)
+            # new_overlap = (
+            #     (walker[i1] == 0.5)
+            #     * (walker[i2] == -0.5)
+            #     * wave.calc_overlap(new_walker, parameters, lattice)
+            # )
+            new_overlap = new_walker_data["log_overlap"]
+            new_sign = self.get_marshall_sign(new_walker, lattice)
+            ratio_2 = (
                 (walker[i1] == 0.5)
                 * (walker[i2] == -0.5)
-                * wave.calc_overlap(new_walker, parameters, lattice)
+                * jnp.exp(new_overlap - overlap)
+                * new_sign
             )
-            ratio_2 = jnp.exp(new_overlap - overlap)
 
             return ratio_1, ratio_2
 
@@ -69,14 +99,15 @@ class heisenberg:
             cumulative_ratios, random_number * cumulative_ratios[-1]
         )
 
-        # jax.debug.print('\nwalker: {}', walker)
-        # jax.debug.print('overlap: {}', overlap)
-        ##jax.debug.print('overlap_gradient: {}', overlap_gradient)
-        # jax.debug.print('weight: {}', weight)
-        # jax.debug.print('ratios: {}', ratios)
-        # jax.debug.print('energy: {}', energy)
-        # jax.debug.print('random_number: {}', random_number)
-        # jax.debug.print('new_ind: {}\n', new_ind)
+        # import jax
+        # jax.debug.print("\nwalker: {}", walker)
+        # jax.debug.print("overlap: {}", overlap)
+        # # jax.debug.print('overlap_gradient: {}', overlap_gradient)
+        # jax.debug.print("weight: {}", weight)
+        # jax.debug.print("ratios: {}", ratios)
+        # jax.debug.print("energy: {}", energy)
+        # jax.debug.print("random_number: {}", random_number)
+        # jax.debug.print("new_ind: {}\n", new_ind)
 
         bond = new_ind % n_bonds
         neighbors = lattice.get_neighboring_sites(jnp.array(lattice.bonds)[bond])
@@ -86,6 +117,179 @@ class heisenberg:
         walker = walker.at[i2].set(-walker[i2])
 
         return energy, qp_weight, overlap_gradient, weight, walker, jnp.exp(overlap)
+
+    @partial(jit, static_argnums=(0, 3, 4))
+    def sf_q(
+        self, walker, parameters: Any, wave: wave_function, lattice: Any
+    ) -> jnp.array:
+        sz_i = walker
+        sz_q = jnp.abs(jnp.fft.fftn(sz_i, norm="ortho")) ** 2
+        return jnp.array([sz_q, sz_q])
+
+    @partial(jit, static_argnums=(0, 3, 4))
+    def local_energy_and_update_lr(
+        self,
+        walker: jax.Array,
+        parameters: Any,
+        wave: t_projected_state,
+        lattice,
+        random_number: float,
+        parameters_copy: Any,
+    ):
+        """Calculate the local energy of a walker and update it using lr sampling
+
+        Parameters
+        ----------
+        walker : Sequence
+            walker spin configuration
+        parameters : Any
+            Parameters of the wavefunction
+        wave : Any
+            Wave function
+        lattice : Any
+            Lattice
+        random_number : float
+            Random number used for MC update
+        parameters_copy : Any
+            Workaround for nans in local energy gradients
+
+        Returns
+        -------
+        Tuple
+            Tuple of local energy, scalar property, overlap_gradient_ratio, weight, updated_walker, overlap
+        """
+        n_bonds = len(lattice.bonds)
+
+        walker_data = wave.build_walker_data(walker, parameters, lattice)
+        sign = self.get_marshall_sign(walker, lattice)
+        overlap = walker_data["log_overlap"] + jnp.log(sign + 0.0j)
+        overlap_gradient = wave.calc_overlap_gradient(walker_data, parameters, lattice)
+        prob = (
+            jnp.abs(jnp.exp(overlap)) ** 2
+            + (jnp.abs(overlap_gradient * jnp.exp(overlap)) ** 2).sum()
+        )
+        qp_weight = 0.0
+
+        def z_ene(bond):
+            neighbors = lattice.get_neighboring_sites(bond)
+            return self.j * walker[neighbors[0]] * walker[neighbors[1]]
+
+        # diagonal
+        energy = jnp.sum(vmap(z_ene)(jnp.array(lattice.bonds))) + 0.0j
+
+        # assuming this will always be used with t_projected_state
+        # calculating overlap with k=0 state
+        overlaps = jnp.exp(walker_data["log_overlaps"])
+        overlap_0 = jnp.sum(overlaps) * sign
+        k_factors = jnp.exp(-jnp.array(wave.symm_factors))
+        spin_i = walker.reshape(-1)
+        spin_q = jnp.sum(k_factors * spin_i) / jnp.sqrt(lattice.n_sites)
+        vector_property = (
+            jnp.array([spin_q, spin_q, 1.0]) * overlap_0 / jnp.exp(overlap)
+        )  # these are < w | S_q | psi_0 > / < w | psi_q >, < w | N_q | psi_0 > / < w | psi_q >, and < w | psi_0 > / < w | psi_q >
+
+        # spin flips
+        # carry: energy
+        def flip(carry, bond):
+            neighbors = lattice.get_neighboring_sites(bond)
+            i1 = neighbors[0]
+            i2 = neighbors[1]
+
+            # s1+ s2-
+            new_walker = walker.at[i1].set(0.5)
+            new_walker = new_walker.at[i2].set(-0.5)
+            new_walker_data = wave.build_walker_data(new_walker, parameters, lattice)
+            # new_overlap = (
+            #     (walker[i1] == -0.5)
+            #     * (walker[i2] == 0.5)
+            #     * wave.calc_overlap(new_walker, parameters, lattice)
+            # )
+            new_overlap = new_walker_data["log_overlap"]
+            new_sign = self.get_marshall_sign(new_walker, lattice)
+            ratio_1 = (
+                (walker[i1] == -0.5)
+                * (walker[i2] == 0.5)
+                * jnp.exp(new_overlap - overlap)
+                * new_sign
+            )
+            carry += self.j * ratio_1 / 2
+            new_overlap_gradient = wave.calc_overlap_gradient(
+                new_walker_data, parameters_copy, lattice
+            )
+            new_overlap = jnp.exp(overlap) * ratio_1
+            new_prob = (
+                jnp.abs(new_overlap) ** 2.0
+                + (jnp.abs(new_overlap_gradient * new_overlap) ** 2.0).sum()
+            )
+            prob_ratio_1 = new_prob / prob
+
+            # s1- s2+
+            new_walker = walker.at[i1].set(-0.5)
+            new_walker = new_walker.at[i2].set(0.5)
+            new_walker_data = wave.build_walker_data(new_walker, parameters, lattice)
+            # new_overlap = (
+            #     (walker[i1] == 0.5)
+            #     * (walker[i2] == -0.5)
+            #     * wave.calc_overlap(new_walker, parameters, lattice)
+            # )
+            new_overlap = new_walker_data["log_overlap"]
+            new_sign = self.get_marshall_sign(new_walker, lattice)
+            ratio_2 = (
+                (walker[i1] == 0.5)
+                * (walker[i2] == -0.5)
+                * jnp.exp(new_overlap - overlap)
+                * new_sign
+            )
+            carry += self.j * ratio_2 / 2
+            new_overlap_gradient = wave.calc_overlap_gradient(
+                new_walker_data, parameters_copy, lattice
+            )
+            new_overlap = jnp.exp(overlap) * ratio_2
+            new_prob = (
+                jnp.abs(new_overlap) ** 2.0
+                + (jnp.abs(new_overlap_gradient * new_overlap) ** 2.0).sum()
+            )
+            prob_ratio_2 = new_prob / prob
+
+            return carry, (prob_ratio_1, prob_ratio_2)
+
+        # ratios = vmap(flip)(jnp.array(lattice.bonds))
+        energy, prob_ratios = lax.scan(flip, energy, jnp.array(lattice.bonds))
+        # energy += self.j * jnp.sum(jnp.concatenate(ratios)) / 2
+        ratios = jnp.concatenate((prob_ratios[0], prob_ratios[1]))
+
+        # update walker
+        cumulative_ratios = jnp.cumsum(jnp.abs(ratios) ** 0.5)
+        weight = 1 / cumulative_ratios[-1]
+        new_ind = jnp.searchsorted(
+            cumulative_ratios, random_number * cumulative_ratios[-1]
+        )
+
+        # import jax
+        # jax.debug.print("\nwalker: {}", walker)
+        # jax.debug.print("overlap: {}", overlap)
+        # # jax.debug.print('overlap_gradient: {}', overlap_gradient)
+        # jax.debug.print("weight: {}", weight)
+        # jax.debug.print("ratios: {}", ratios)
+        # jax.debug.print("energy: {}", energy)
+        # jax.debug.print("random_number: {}", random_number)
+        # jax.debug.print("new_ind: {}\n", new_ind)
+
+        bond = new_ind % n_bonds
+        neighbors = lattice.get_neighboring_sites(jnp.array(lattice.bonds)[bond])
+        i1 = neighbors[0]
+        i2 = neighbors[1]
+        walker = walker.at[i1].set(-walker[i1])
+        walker = walker.at[i2].set(-walker[i2])
+
+        return (
+            energy,
+            vector_property,
+            overlap_gradient,
+            weight,
+            walker,
+            jnp.exp(overlap),
+        )
 
     def __hash__(self):
         return hash((self.j,))
@@ -99,13 +303,21 @@ class heisenberg_bond:
     max_n_phonons: Any = jnp.inf
 
     @partial(jit, static_argnums=(0, 3, 4))
-    def local_energy_and_update(self, walker, parameters, wave, lattice, random_number):
+    def local_energy_and_update(
+        self,
+        walker: jax.Array,
+        parameters: dict,
+        wave: wave_function,
+        lattice,
+        random_number: float,
+    ):
         spins = walker[0]
         phonons = walker[1]
         n_bonds = len(lattice.bonds)
 
-        overlap = wave.calc_overlap(walker, parameters, lattice)
-        overlap_gradient = wave.calc_overlap_gradient(walker, parameters, lattice)
+        walker_data = wave.build_walker_data(walker, parameters, lattice)
+        overlap = wave.calc_overlap(walker_data, parameters, lattice)
+        overlap_gradient = wave.calc_overlap_gradient(walker_data, parameters, lattice)
 
         # qp_weight
         # ignoring max_n_phonons, i = i_r
@@ -297,14 +509,14 @@ class heisenberg_bond:
             cumulative_ratios, random_number * cumulative_ratios[-1]
         )
 
-        # jax.debug.print('\nwalker: {}', walker)
-        # jax.debug.print('overlap: {}', overlap)
-        ##jax.debug.print('overlap_gradient: {}', overlap_gradient)
-        # jax.debug.print('weight: {}', weight)
-        # jax.debug.print('ratios: {}', ratios)
-        # jax.debug.print('energy: {}', energy)
-        # jax.debug.print('random_number: {}', random_number)
-        # jax.debug.print('new_ind: {}\n', new_ind)
+        # jax.debug.print("\nwalker: {}", walker)
+        # jax.debug.print("overlap: {}", overlap)
+        # # jax.debug.print('overlap_gradient: {}', overlap_gradient)
+        # jax.debug.print("weight: {}", weight)
+        # jax.debug.print("ratios: {}", ratios)
+        # jax.debug.print("energy: {}", energy)
+        # jax.debug.print("random_number: {}", random_number)
+        # jax.debug.print("new_ind: {}\n", new_ind)
 
         bond = jnp.array(lattice.bonds)[new_ind % n_bonds]
         neighbors = lattice.get_neighboring_sites(bond)

@@ -6,10 +6,9 @@ os.environ["JAX_PLATFORM_NAME"] = "cpu"
 import pickle
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, List, Sequence, Tuple
+from typing import Any, Callable, List, Optional, Sequence, Tuple
 
-# os.environ['JAX_ENABLE_X64'] = 'True'
-# os.environ['JAX_DISABLE_JIT'] = 'True'
+import jax
 from jax import jit, lax
 from jax import numpy as jnp
 from jax import random
@@ -86,15 +85,15 @@ def get_input_k(elec_k, phonon_occ, lattice_shape):
 
 @partial(jit, static_argnums=(2,))
 def get_input_k_2(
-    elec_k: List[tuple], phonon_occ: jnp.ndarray, lattice_shape: Sequence
-) -> jnp.ndarray:
+    elec_k: List[tuple], phonon_occ: jax.Array, lattice_shape: Sequence
+) -> jax.Array:
     """Makes NN input array from a bipolaron k-space walker
 
     Parameters
     ----------
     elec_k : Sequence
         Pair of electron momenta
-    phonon_occ : jnp.ndarray
+    phonon_occ : jax.Array
         Phonon occupations
     lattice_shape : Sequence
         Lattice shape
@@ -113,15 +112,15 @@ def get_input_k_2(
 
 @partial(jit, static_argnums=(2,))
 def get_input_k_2_ns(
-    elec_k: List[tuple], phonon_occ: jnp.ndarray, lattice_shape: Sequence
-) -> jnp.ndarray:
+    elec_k: List[tuple], phonon_occ: jax.Array, lattice_shape: Sequence
+) -> jax.Array:
     """Makes NN input array from a bipolaron k-space walker
 
     Parameters
     ----------
     elec_k : Sequence
         Pair of electron momenta
-    phonon_occ : jnp.ndarray
+    phonon_occ : jax.Array
         Phonon occupations
     lattice_shape : Sequence
         Lattice shape
@@ -143,15 +142,15 @@ def get_input_k_2_ns(
 
 @partial(jit, static_argnums=(2,))
 def get_input_k_2_ee(
-    elec_k: List[tuple], phonon_occ: jnp.ndarray, lattice_shape: Sequence
-) -> jnp.ndarray:
+    elec_k: List[tuple], phonon_occ: jax.Array, lattice_shape: Sequence
+) -> jax.Array:
     """Makes NN input array from a bipolaron k-space walker, only uses electronic momenta
 
     Parameters
     ----------
     elec_k : Sequence
         Pair of electron momenta
-    phonon_occ : jnp.ndarray
+    phonon_occ : jax.Array
         Phonon occupations
     lattice_shape : Sequence
         Lattice shape
@@ -206,7 +205,7 @@ def get_input_n(walker):
 @dataclass
 class sum_states:
     states: Tuple
-    n_parameters: int = None
+    n_parameters: Optional[int] = None
 
     def __post_init__(self):
         self.n_parameters = sum([state.n_parameters for state in self.states])
@@ -258,10 +257,12 @@ class sum_states:
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
         return jnp.sum(
-            [
-                state.calc_overlap_map(elec_pos, phonon_occ, parameters[i], lattice)
-                for i, state in enumerate(self.states)
-            ]
+            jnp.array(
+                [
+                    state.calc_overlap_map(elec_pos, phonon_occ, parameters[i], lattice)
+                    for i, state in enumerate(self.states)
+                ]
+            )
         )
 
     @partial(jit, static_argnums=(0, 4))
@@ -271,7 +272,7 @@ class sum_states:
         )
         gradient = grad_fun(1.0 + 0.0j)[2]
         gradient = self.serialize(gradient)  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -295,7 +296,7 @@ class sum_states:
 @dataclass
 class product_states:
     states: Tuple
-    n_parameters: int = None
+    n_parameters: Optional[int] = None
 
     def __post_init__(self):
         self.n_parameters = sum([state.n_parameters for state in self.states])
@@ -347,10 +348,12 @@ class product_states:
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_map(self, elec_pos, phonon_occ, parameters, lattice):
         return jnp.prod(
-            [
-                state.calc_overlap_map(elec_pos, phonon_occ, parameters[i], lattice)
-                for i, state in enumerate(self.states)
-            ]
+            jnp.array(
+                [
+                    state.calc_overlap_map(elec_pos, phonon_occ, parameters[i], lattice)
+                    for i, state in enumerate(self.states)
+                ]
+            )
         )
 
     @partial(jit, static_argnums=(0, 4))
@@ -360,7 +363,7 @@ class product_states:
         )
         gradient = grad_fun(1.0 + 0.0j)[2]
         gradient = self.serialize(gradient)
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -428,7 +431,7 @@ class merrifield:
         )
         gradient = grad_fun(1.0 + 0.0j)[2]
         gradient = self.serialize(gradient)  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -439,7 +442,7 @@ class merrifield:
         )
         gradient = grad_fun(1.0 + 0.0j)[2]
         gradient = self.serialize(gradient)
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient  # / value
 
@@ -623,7 +626,7 @@ class rotated_merrifield:
         _, grad_fun = vjp(self.calc_overlap, elec_pos, phonon_occ, parameters, lattice)
         gradient = grad_fun(1.0 + 0.0j)[2]
         gradient = self.serialize(gradient)  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -634,7 +637,7 @@ class rotated_merrifield:
         )
         gradient = grad_fun(1.0 + 0.0j)[2]
         gradient = self.serialize(gradient)
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient  # / value
 
@@ -692,7 +695,7 @@ class sc_k_n:
         )
         gradient = grad_fun(1.0 + 0.0j)[2]
         gradient = self.serialize(gradient)  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -703,7 +706,7 @@ class sc_k_n:
         )
         gradient = self.serialize(gradient)
         gradient = gradient  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -780,7 +783,7 @@ class sc:
         )
         gradient = grad_fun(1.0 + 0.0j)[2]
         gradient = self.serialize(gradient)  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -790,7 +793,7 @@ class sc:
             elec_pos, phonon_occ, parameters, lattice
         )
         gradient = self.serialize(gradient)
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient  # / value
 
@@ -860,7 +863,7 @@ class sc_2:
         )
         gradient = grad_fun(1.0 + 0.0j)[2]
         gradient = self.serialize(gradient)  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -870,7 +873,7 @@ class sc_2:
             elec_pos, phonon_occ, parameters, lattice
         )
         gradient = self.serialize(gradient)
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient  # / value
 
@@ -971,7 +974,7 @@ class sc_k_nep:
         )
         gradient = grad_fun(1.0 + 0.0j)[2]
         gradient = self.serialize(gradient)  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -981,7 +984,7 @@ class sc_k_nep:
             elec_pos, phonon_occ, parameters, lattice
         )
         gradient = self.serialize(gradient)
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient  # / value
 
@@ -992,7 +995,7 @@ class sc_k_nep:
 @dataclass
 class merrifield_complex:
     n_parameters: int
-    k: Sequence = None
+    k: Optional[Sequence] = None
 
     def serialize(self, parameters):
         return parameters
@@ -1043,7 +1046,7 @@ class merrifield_complex:
         )
         gradient = grad_fun(1.0 + 0.0j)[2]
         gradient = self.serialize(gradient)  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -1053,7 +1056,7 @@ class merrifield_complex:
             elec_pos, phonon_occ, parameters, lattice
         )
         gradient = self.serialize(gradient)
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient  # / value
 
@@ -1088,7 +1091,7 @@ class ee_jastrow:
             elec_pos, phonon_occ, parameters, lattice
         )
         gradient = self.serialize(gradient)  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -1174,7 +1177,7 @@ class ssh_merrifield:
         )
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
         gradient = self.serialize(gradient)
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient  # / value
 
@@ -1184,7 +1187,7 @@ class ssh_merrifield:
             elec_pos, phonon_occ, parameters, lattice
         )
         gradient = self.serialize(gradient)
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient  # / value
 
@@ -1374,7 +1377,7 @@ class bm_ssh_lf:
             self.calc_overlap, elec_pos, phonon_occ, parameters, lattice
         )
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -1384,7 +1387,7 @@ class bm_ssh_lf:
             self.calc_overlap_map, elec_pos, phonon_occ, parameters, lattice
         )
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -1395,7 +1398,7 @@ class bm_ssh_lf:
 @dataclass
 class bm_ssh_merrifield:
     n_parameters: int
-    k: Sequence = None
+    k: Optional[Sequence] = None
 
     def serialize(self, parameters):
         return parameters
@@ -1491,7 +1494,7 @@ class bm_ssh_merrifield:
         )
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
         gradient = self.serialize(gradient)  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -1502,7 +1505,7 @@ class bm_ssh_merrifield:
         )
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
         gradient = self.serialize(gradient)  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -1594,7 +1597,7 @@ class nn_jastrow:
         )
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
         gradient = self.serialize(gradient)
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient  # / value
 
@@ -1609,8 +1612,8 @@ class nn_jastrow_complex:
     reference: Any
     n_parameters: int
     lattice_shape: Sequence
-    mask: Sequence = None
-    k: Sequence = None
+    mask: Optional[jax.Array] = None
+    k: Optional[Sequence] = None
     get_input: Callable = get_input_n_k
 
     def __post_init__(self):
@@ -1697,7 +1700,7 @@ class nn_jastrow_complex:
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
         # value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
         gradient = self.serialize(gradient)  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -1718,10 +1721,10 @@ class nn_complex:
     nn_apply_r: Callable
     nn_apply_phi: Callable
     n_parameters: int
-    mask: Sequence = None
-    k: Sequence = None
+    mask: Optional[Sequence] = None
+    k: Optional[Sequence] = None
     get_input: Callable = get_input_r
-    lattice_shape: Sequence = None
+    lattice_shape: Optional[Sequence] = None
 
     def __post_init__(self):
         if self.mask is None:
@@ -1799,7 +1802,7 @@ class nn_complex:
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
         # value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
         gradient = self.serialize(gradient)  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -1841,8 +1844,8 @@ class nn_complex_n:
     nn_apply_phi: Callable
     n_parameters: int
     lattice_shape: Sequence
-    mask: Sequence = None
-    k: Sequence = None
+    mask: Optional[jax.Array] = None
+    k: Optional[Sequence] = None
     get_input: Callable = get_input_n_k
 
     def __post_init__(self):
@@ -1903,7 +1906,7 @@ class nn_complex_n:
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
         # value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
         gradient = self.serialize(gradient)
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient  # / value
 
@@ -1994,7 +1997,7 @@ class nn_jastrow_2:
             elec_pos, phonon_occ, parameters, lattice
         )
         gradient = self.serialize(gradient)
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient  # / value
 
@@ -2009,7 +2012,7 @@ class nn_jastrow_2_complex:
     ee_jastrow: Any
     reference: Any
     n_parameters: int
-    mask: Sequence = None
+    mask: Optional[jax.Array] = None
 
     def __post_init__(self):
         self.n_parameters += self.reference.n_parameters + self.ee_jastrow.n_parameters
@@ -2114,7 +2117,7 @@ class nn_jastrow_2_complex:
         )
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[2]
         gradient = self.serialize(gradient)  # / value
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient
 
@@ -2135,8 +2138,8 @@ class spin_nn_complex:
     nn_apply_r: Callable
     nn_apply_phi: Callable
     n_parameters: int
-    mask: Sequence = None
-    k: Sequence = None
+    mask: Optional[jax.Array] = None
+    k: Optional[Sequence] = None
     get_input: Callable = get_input_spins
 
     def __post_init__(self):
@@ -2194,7 +2197,7 @@ class spin_nn_complex:
         gradient = grad_fun(jnp.array([1.0 + 0.0j], dtype="complex64")[0])[1]
         # value, gradient = value_and_grad(self.calc_overlap, argnums=2)(elec_pos, phonon_occ, parameters, lattice)
         gradient = self.serialize(gradient)
-        gradient = jnp.where(jnp.isnan(gradient), 0.0, gradient)
+        gradient = jnp.array(jnp.where(jnp.isnan(gradient), 0.0, gradient))
         gradient = jnp.where(jnp.isinf(gradient), 0.0, gradient)
         return gradient  # / value
 
