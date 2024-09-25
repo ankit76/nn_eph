@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
@@ -9,8 +8,6 @@ from jax import numpy as jnp
 from jax import vmap
 
 from nn_eph.wavefunctions_n import t_projected_state, wave_function
-
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
 
 
 @dataclass

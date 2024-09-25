@@ -1,11 +1,7 @@
-import os
-
-import numpy as np
-
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
 from typing import Any, Sequence
 
 import jax
+import numpy as np
 from flax import linen as nn
 from jax import numpy as jnp
 from jax import random

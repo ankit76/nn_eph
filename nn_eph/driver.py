@@ -1,26 +1,19 @@
-import os
+import pickle
 import time
+from functools import partial
 
 import numpy as np
 
-os.environ["XLA_FLAGS"] = (
-    "--xla_force_host_platform_device_count=1 --xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1"
-)
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
-import pickle
-from functools import partial
+from nn_eph import config
+
+config.setup_jax()
 
 import jax.numpy as jnp
-from jax import random
-from mpi4py import MPI
+from jax import random, vmap
 
 from nn_eph import samplers, stat_utils
 
 print = partial(print, flush=True)
-
-comm = MPI.COMM_WORLD
-size = comm.Get_size()
-rank = comm.Get_rank()
 
 
 def driver(
@@ -30,12 +23,17 @@ def driver(
     wave,
     lattice,
     sampler,
+    MPI,
     n_steps=1000,
     step_size=0.1,
     seed=0,
     print_stats=True,
     dev_thresh_fac=1.0e6,
+    n_walkers=1,
 ):
+    comm = MPI.COMM_WORLD
+    size = comm.Get_size()
+    rank = comm.Get_rank()
     moment_1 = jnp.zeros(wave.n_parameters)
     moment_2 = jnp.zeros(wave.n_parameters)
     decay_1 = 0.1
@@ -52,15 +50,26 @@ def driver(
     # dev_thresh_fac = 1.0e6
     for iteration in range(n_steps):
         key, subkey = random.split(key)
-        random_numbers = random.uniform(subkey, shape=(sampler.n_samples,))
-        # g_scan = g #* (1 - jnp.exp(-iteration / 10))
-        # starter_iters = 100
-        # if iteration < starter_iters:
-        #  g_scan = 0.
-        # else:
-        #  g_scan = g * (1. - jnp.exp(-(iteration - starter_iters) / 500))
-        # g_scan = 6. - (6. - g) * (1. - jnp.exp(-(iteration - starter_iters) / 500))
+        random_numbers = random.uniform(
+            subkey,
+            shape=(
+                n_walkers,
+                sampler.n_samples,
+            ),
+        )
         init = time.time()
+        batched_sampling = vmap(
+            sampler.sampling,
+            in_axes=(
+                None,
+                None,
+                None,
+                None,
+                None,
+                0,
+                None,
+            ),  # Batch only over random_numbers
+        )
         (
             weight,
             energy,
@@ -70,9 +79,24 @@ def driver(
             energies,
             qp_weights,
             weights,
-        ) = sampler.sampling(
+        ) = batched_sampling(
             walker, ham, parameters, wave, lattice, random_numbers, dev_thresh_fac
         )
+        weight_per_walker = jnp.sum(weights, axis=1)
+        gradient = weight_per_walker.reshape(-1, 1) * gradient
+        gradient = jnp.sum(gradient, axis=0)
+        lene_gradient = weight_per_walker.reshape(-1, 1) * lene_gradient
+        lene_gradient = jnp.sum(lene_gradient, axis=0)
+        gradient /= jnp.sum(weight_per_walker)
+        lene_gradient /= jnp.sum(weight_per_walker)
+
+        energies *= weights
+        energies = jnp.sum(energies, axis=0)
+        qp_weights *= weights
+        qp_weights = jnp.sum(qp_weights, axis=0)
+        weights = jnp.sum(weights, axis=0)
+        energies /= weights
+        qp_weights /= weights
 
         # reject outliers
         samples_clean, _ = stat_utils.reject_outliers(
@@ -185,19 +209,45 @@ def driver(
     n_samples = 10 * sampler.n_samples
     sampler_1 = samplers.continuous_time(n_eql, n_samples)
     key, subkey = random.split(key)
-    random_numbers = random.uniform(subkey, shape=(sampler_1.n_samples,))
-    out = sampler_1.sampling(
+    random_numbers = random.uniform(
+        subkey,
+        shape=(
+            n_walkers,
+            sampler_1.n_samples,
+        ),
+    )
+    batched_sampling = vmap(
+        sampler_1.sampling,
+        in_axes=(
+            None,
+            None,
+            None,
+            None,
+            None,
+            0,
+            None,
+        ),  # Batch only over random_numbers
+    )
+    out = batched_sampling(
         walker,
         ham,
         parameters,
         wave,
         lattice,
         random_numbers,
-        dev_thresh_fac=dev_thresh_fac * 100.0,
+        dev_thresh_fac * 100.0,
     )
     energies = out[-3]
     qp_weights = out[-2]
     weights = out[-1]
+    energies *= weights
+    energies = jnp.sum(energies, axis=0)
+    qp_weights *= weights
+    qp_weights = jnp.sum(qp_weights, axis=0)
+    weights = jnp.sum(weights, axis=0)
+    energies /= weights
+    qp_weights /= weights
+
     samples_clean, _ = stat_utils.reject_outliers(
         np.stack((energies, qp_weights, weights)).T, 0, 1000.0
     )
@@ -263,10 +313,14 @@ def driver_corr(
     wave,
     lattice,
     sampler,
+    MPI,
     seed=0,
     print_stats=True,
     dev_thresh_fac=1.0e6,
 ):
+    comm = MPI.COMM_WORLD
+    size = comm.Get_size()
+    rank = comm.Get_rank()
     key = random.PRNGKey(seed + rank)
 
     # dev_thresh_fac = 1.0e6
@@ -350,8 +404,20 @@ def driver_corr(
 
 
 def driver_sr(
-    walker, ham, parameters, wave, lattice, sampler, n_steps=1000, step_size=0.1, seed=0
+    walker,
+    ham,
+    parameters,
+    wave,
+    lattice,
+    sampler,
+    MPI,
+    n_steps=1000,
+    step_size=0.1,
+    seed=0,
 ):
+    comm = MPI.COMM_WORLD
+    size = comm.Get_size()
+    rank = comm.Get_rank()
     moment_1 = jnp.zeros(wave.n_parameters)
     moment_2 = jnp.zeros(wave.n_parameters)
     decay_1 = 0.1
@@ -516,23 +582,19 @@ def driver_lr(
     wave,
     lattice,
     sampler,
+    MPI,
     seed=0,
     print_stats=True,
     dev_thresh_fac=1.0e6,
 ):
+    comm = MPI.COMM_WORLD
+    size = comm.Get_size()
+    rank = comm.Get_rank()
     key = random.PRNGKey(seed + rank)
     walker_0 = walker.copy()
 
-    # dev_thresh_fac = 1.0e6
     key, subkey = random.split(key)
     random_numbers = random.uniform(subkey, shape=(sampler.n_samples,))
-    # g_scan = g #* (1 - jnp.exp(-iteration / 10))
-    # starter_iters = 100
-    # if iteration < starter_iters:
-    #  g_scan = 0.
-    # else:
-    #  g_scan = g * (1. - jnp.exp(-(iteration - starter_iters) / 500))
-    # g_scan = 6. - (6. - g) * (1. - jnp.exp(-(iteration - starter_iters) / 500))
     (
         weight,
         energy,
@@ -547,7 +609,6 @@ def driver_lr(
     ) = sampler.sampling_lr(
         walker, ham, parameters, wave, lattice, random_numbers, dev_thresh_fac
     )
-    # return metric, h
 
     # reject outliers
     # samples_clean, clean_ind = stat_utils.reject_outliers(
@@ -637,23 +698,20 @@ def driver_lr_sf(
     wave,
     lattice,
     sampler,
+    MPI,
     seed=0,
     print_stats=True,
     dev_thresh_fac=1.0e6,
 ):
+    comm = MPI.COMM_WORLD
+    size = comm.Get_size()
+    rank = comm.Get_rank()
     key = random.PRNGKey(seed + rank)
     walker_0 = walker.copy()
 
     # dev_thresh_fac = 1.0e6
     key, subkey = random.split(key)
     random_numbers = random.uniform(subkey, shape=(sampler.n_samples,))
-    # g_scan = g #* (1 - jnp.exp(-iteration / 10))
-    # starter_iters = 100
-    # if iteration < starter_iters:
-    #  g_scan = 0.
-    # else:
-    #  g_scan = g * (1. - jnp.exp(-(iteration - starter_iters) / 500))
-    # g_scan = 6. - (6. - g) * (1. - jnp.exp(-(iteration - starter_iters) / 500))
     (
         weight,
         energy,
@@ -714,13 +772,6 @@ def driver_lr_sf(
     comm.Reduce([weight, MPI.FLOAT], [total_weight, MPI.FLOAT], op=MPI.SUM, root=0)
     comm.Reduce([energy, MPI.FLOAT], [total_energy, MPI.FLOAT], op=MPI.SUM, root=0)
     comm.Reduce([norm, MPI.FLOAT], [total_norm, MPI.FLOAT], op=MPI.SUM, root=0)
-    # comm.Reduce([metric, MPI.FLOAT], [total_metric, MPI.FLOAT], op=MPI.SUM, root=0)
-    # comm.Reduce(
-    #     [h, MPI.FLOAT],
-    #     [total_h, MPI.FLOAT],
-    #     op=MPI.SUM,
-    #     root=0,
-    # )
     total_prop = comm.reduce(prop, op=MPI.SUM, root=0)
     total_vector_prop = comm.reduce(vector_prop, op=MPI.SUM, root=0)
     total_metric = comm.reduce(metric, op=MPI.SUM, root=0)

@@ -1,19 +1,15 @@
-import os
-
-import numpy as np
-import optax
-from jax.tree_util import register_pytree_node_class
-
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
 from dataclasses import dataclass
 from functools import partial
 from typing import Callable
 
 # os.environ['JAX_ENABLE_X64'] = 'True'
 import jax
+import numpy as np
+import optax
 from jax import jit
 from jax import numpy as jnp
 from jax import random, tree_util, vjp, vmap
+from jax.tree_util import register_pytree_node_class
 
 
 @partial(jit, static_argnums=(1,))

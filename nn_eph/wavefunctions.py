@@ -1,14 +1,10 @@
-import os
-
-import numpy as np
-
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
 import pickle
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, Callable, List, Optional, Sequence, Tuple
 
 import jax
+import numpy as np
 from jax import jit, lax
 from jax import numpy as jnp
 from jax import random

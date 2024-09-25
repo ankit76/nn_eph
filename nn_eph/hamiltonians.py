@@ -1,6 +1,3 @@
-import os
-
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, Sequence
