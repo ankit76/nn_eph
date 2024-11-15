@@ -361,19 +361,22 @@ class t_projected_state(wave_function):
         self.k = k
         if self.k is None:
             self.k = (0.0,)
-        if lattice is not None:
-            self.symm_factors = tuple(
-                np.sum(
-                    2.0j
-                    * np.pi
-                    * np.array(self.k)
-                    @ np.array(site)
-                    / np.array(lattice.shape)
+        if symm_factors is None:
+            if lattice is not None:
+                self.symm_factors = tuple(
+                    np.sum(
+                        2.0j
+                        * np.pi
+                        * np.array(self.k)
+                        @ np.array(site)
+                        / np.array(lattice.shape)
+                    )
+                    for site in lattice.sites
                 )
-                for site in lattice.sites
-            )
+            else:
+                self.symm_factors = (0.0,)
         else:
-            self.symm_factors = (0.0,)
+            self.symm_factors = symm_factors
 
     @partial(jit, static_argnums=(0, 3))
     def build_walker_data(self, walker: Any, parameters: Any, lattice: Any) -> dict:
