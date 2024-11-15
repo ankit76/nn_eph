@@ -376,7 +376,20 @@ class t_projected_state(wave_function):
             else:
                 self.symm_factors = (0.0,)
         else:
-            self.symm_factors = symm_factors
+            trans_factors = tuple(
+                np.sum(
+                    2.0j
+                    * np.pi
+                    * np.array(self.k)
+                    @ np.array(site)
+                    / np.array(lattice.shape)
+                )
+                for site in lattice.sites
+            )
+            assert len(symm_factors) == len(trans_factors)
+            self.symm_factors = tuple(
+                trans_factors[i] + symm_factors[i] for i in range(len(symm_factors))
+            )
 
     @partial(jit, static_argnums=(0, 3))
     def build_walker_data(self, walker: Any, parameters: Any, lattice: Any) -> dict:
