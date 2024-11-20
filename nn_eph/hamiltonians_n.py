@@ -861,7 +861,7 @@ class hubbard_holstein:
 
 
 @dataclass
-class hubbard_holstein_spinless:
+class holstein_spinless:
     """Hubbard-Holstein model Hamiltonian
 
     Attributes
