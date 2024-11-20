@@ -152,6 +152,10 @@ class one_dimensional_chain:
             [((pos[0] - 1) % self.n_sites,), ((pos[0] + 1) % self.n_sites,)]
         )
 
+    @partial(jit, static_argnums=(0,))
+    def get_nearest_neighbors_edge_bond(self, pos):
+        return jnp.array([pos[0] == 0, pos[0] == (self.n_sites - 1)])
+
     def get_nearest_neighbor_modes(self, pos):
         return (
             jnp.array(

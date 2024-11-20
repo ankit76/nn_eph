@@ -876,6 +876,8 @@ class hubbard_holstein_spinless:
         Number of electrons
     max_n_phonons : any, optional
         Maximum number of phonons, by default jnp.inf
+    antiperiodic : bool, optional
+        Antiperiodic boundary conditions, by default False
     """
 
     omega: float
@@ -883,6 +885,7 @@ class hubbard_holstein_spinless:
     n_orbs: int
     n_elec: int
     max_n_phonons: any = jnp.inf
+    antiperiodic: bool = False
 
     @partial(jit, static_argnums=(0,))
     def diagonal_energy(self, walker: Sequence) -> jax.Array:
@@ -948,25 +951,30 @@ class hubbard_holstein_spinless:
         # scan over neighbors of elec_pos
         # carry: [ energy, elec_pos, idx ]
         def scanned_fun(carry, x):
-            neighbor_site_num = lattice.get_site_num(x)
+            neighbor, neighbor_edge_bond = x
+            neighbor_site_num = lattice.get_site_num(neighbor)
             excitation_ee = {}
             excitation_ee["sm_idx"] = jnp.array((1, carry[2], neighbor_site_num))
             excitation_ee["idx"] = jnp.array((1, carry[1], neighbor_site_num))
             excitation_ph = jnp.array((0, 0))
             excitation = {"ee": excitation_ee, "ph": excitation_ph}
-            ratio = (walker[0][(*x,)] == 0) * wave.calc_overlap_ratio(
+            ratio = (walker[0][(*neighbor,)] == 0) * wave.calc_overlap_ratio(
                 walker_data, excitation, parameters, lattice
             )
-            carry[0] -= ratio
+            carry[0] -= ratio * (1 - 2 * neighbor_edge_bond * self.antiperiodic)
             return carry, ratio
 
         # scan over electrons
         # carry: [ energy, occ_idx ]
         def outer_scanned_fun(carry, x):
+
             [carry[0], _, _], hop_ratios = lax.scan(
                 scanned_fun,
                 [carry[0], lattice.get_site_num(x), carry[1]],
-                lattice.get_nearest_neighbors(x),
+                (
+                    lattice.get_nearest_neighbors(x),
+                    lattice.get_nearest_neighbors_edge_bond(x),
+                ),
             )
             carry[1] += 1
             return carry, hop_ratios
