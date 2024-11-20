@@ -37,7 +37,7 @@ class heisenberg:
 
         def z_ene(bond):
             neighbors = lattice.get_neighboring_sites(bond)
-            return self.j * walker[neighbors[0]] * walker[neighbors[1]]
+            return self.j * walker[*neighbors[0]] * walker[*neighbors[1]]
 
         # diagonal
         energy = jnp.sum(vmap(z_ene)(jnp.array(lattice.bonds))) + 0.0j
@@ -49,8 +49,8 @@ class heisenberg:
             i2 = neighbors[1]
 
             # s1+ s2-
-            new_walker = walker.at[i1].set(0.5)
-            new_walker = new_walker.at[i2].set(-0.5)
+            new_walker = walker.at[*i1].set(0.5)
+            new_walker = new_walker.at[*i2].set(-0.5)
             new_walker_data = wave.build_walker_data(new_walker, parameters, lattice)
             # new_overlap = (
             #     (walker[i1] == -0.5)
@@ -60,15 +60,15 @@ class heisenberg:
             new_overlap = new_walker_data["log_overlap"]
             new_sign = self.get_marshall_sign(new_walker, lattice)
             ratio_1 = (
-                (walker[i1] == -0.5)
-                * (walker[i2] == 0.5)
+                (walker[*i1] == -0.5)
+                * (walker[*i2] == 0.5)
                 * jnp.exp(new_overlap - overlap)
                 * new_sign
             )
 
             # s1- s2+
-            new_walker = walker.at[i1].set(-0.5)
-            new_walker = new_walker.at[i2].set(0.5)
+            new_walker = walker.at[*i1].set(-0.5)
+            new_walker = new_walker.at[*i2].set(0.5)
             new_walker_data = wave.build_walker_data(new_walker, parameters, lattice)
             # new_overlap = (
             #     (walker[i1] == 0.5)
@@ -78,8 +78,8 @@ class heisenberg:
             new_overlap = new_walker_data["log_overlap"]
             new_sign = self.get_marshall_sign(new_walker, lattice)
             ratio_2 = (
-                (walker[i1] == 0.5)
-                * (walker[i2] == -0.5)
+                (walker[*i1] == 0.5)
+                * (walker[*i2] == -0.5)
                 * jnp.exp(new_overlap - overlap)
                 * new_sign
             )
@@ -110,8 +110,8 @@ class heisenberg:
         neighbors = lattice.get_neighboring_sites(jnp.array(lattice.bonds)[bond])
         i1 = neighbors[0]
         i2 = neighbors[1]
-        walker = walker.at[i1].set(-walker[i1])
-        walker = walker.at[i2].set(-walker[i2])
+        walker = walker.at[*i1].set(-walker[*i1])
+        walker = walker.at[*i2].set(-walker[*i2])
 
         return energy, qp_weight, overlap_gradient, weight, walker, jnp.exp(overlap)
 
@@ -178,7 +178,7 @@ class heisenberg:
         # calculating overlap with k=0 state
         overlaps = jnp.exp(walker_data["log_overlaps"])
         overlap_0 = jnp.sum(overlaps) * sign
-        k_factors = jnp.exp(-jnp.array(wave.symm_factors))
+        k_factors = jnp.exp(-jnp.array(wave.trans_factors))
         spin_i = walker.reshape(-1)
         spin_q = jnp.sum(k_factors * spin_i) / jnp.sqrt(lattice.n_sites)
         vector_property = (

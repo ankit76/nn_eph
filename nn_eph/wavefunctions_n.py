@@ -173,7 +173,7 @@ class product_state(wave_function):
         Number of parameters in the wave function
     """
 
-    states: Tuple[wave_function]
+    states: Tuple[wave_function, ...]
     n_parameters: int = 1
     walker_adapters: Optional[Tuple[Callable, ...]] = None
     excitation_adapters: Optional[Tuple[Callable, ...]] = None
@@ -352,6 +352,7 @@ class t_projected_state(wave_function):
         n_parameters: Optional[int] = None,
         k: Optional[Tuple] = None,
         symm_factors: Optional[Tuple] = None,
+        trans_factors: Optional[Tuple] = None,
         lattice: Any = None,
     ):
         self.state = state
@@ -361,22 +362,8 @@ class t_projected_state(wave_function):
         self.k = k
         if self.k is None:
             self.k = (0.0,)
-        if symm_factors is None:
-            if lattice is not None:
-                self.symm_factors = tuple(
-                    np.sum(
-                        2.0j
-                        * np.pi
-                        * np.array(self.k)
-                        @ np.array(site)
-                        / np.array(lattice.shape)
-                    )
-                    for site in lattice.sites
-                )
-            else:
-                self.symm_factors = (0.0,)
-        else:
-            trans_factors = tuple(
+        if lattice is not None:
+            self.trans_factors = tuple(
                 np.sum(
                     2.0j
                     * np.pi
@@ -386,9 +373,15 @@ class t_projected_state(wave_function):
                 )
                 for site in lattice.sites
             )
-            assert len(symm_factors) == len(trans_factors)
+        else:
+            self.trans_factors = (0.0,)
+        if symm_factors is None:
+            self.symm_factors = self.trans_factors
+        else:
+            assert len(symm_factors) == len(self.trans_factors)
             self.symm_factors = tuple(
-                trans_factors[i] + symm_factors[i] for i in range(len(symm_factors))
+                self.trans_factors[i] + symm_factors[i]
+                for i in range(len(symm_factors))
             )
 
     @partial(jit, static_argnums=(0, 3))
@@ -933,6 +926,74 @@ class kghf(ghf):
 
 
 @dataclass
+class spinless_hf(wave_function):
+    """Spinless Hartree-Fock, complex orbitals, real overlaps
+
+    Attributes
+    ----------
+    n_parameters : int
+        Number of orbital coefficients
+    n_elec : int
+        Number of spinless electrons
+    """
+
+    n_elec: int
+    n_parameters: int
+
+    @partial(jit, static_argnums=(0, 3))
+    def build_walker_data(self, walker_occ, parameters: Sequence, lattice: Any) -> dict:
+        elec_pos = jnp.nonzero(walker_occ.reshape(-1), size=self.n_elec)[0]
+        parameters_0 = parameters[0] + 1.0j * parameters[1]
+        overlap_mat = parameters_0[elec_pos, :]
+        complex_overlap = jnp.linalg.det(overlap_mat)
+        r_mat = parameters_0 @ jnp.linalg.inv(overlap_mat)
+        return {
+            "walker": elec_pos,
+            "walker_occ": walker_occ,
+            "r_mat": r_mat,
+            "complex_overlap": complex_overlap,
+        }
+
+    @partial(jit, static_argnums=(0, 3))
+    def calc_overlap(
+        self, walker_data: dict, parameters: Sequence, lattice: Any
+    ) -> jax.Array:
+        walker = walker_data["walker"]
+        parameters_0 = parameters[0] + 1.0j * parameters[1]
+        overlap = jnp.linalg.det(parameters_0[walker, :])
+        return jnp.log((overlap).real + 0.0j)
+
+    @partial(jit, static_argnums=(0, 4))
+    def calc_overlap_ratio(
+        self,
+        walker_data: dict,
+        excitation: jax.Array,
+        parameters: Sequence,
+        lattice: Any,
+    ) -> complex:
+        excitation_sm = excitation["sm_idx"]
+        complex_overlap_ratio = walker_data["r_mat"][excitation_sm[1], excitation_sm[0]]
+        return (
+            complex_overlap_ratio * walker_data["complex_overlap"]
+        ).real / walker_data["complex_overlap"].real
+
+    def serialize(self, parameters: Sequence) -> jax.Array:
+        return jnp.concatenate(
+            [parameters_i.reshape(-1) for parameters_i in parameters]
+        )
+
+    def update_parameters(self, parameters: List, update: jax.Array) -> Sequence:
+        for i in range(len(parameters)):
+            parameters[i] = parameters[i] + update[
+                parameters[i].size * i : parameters[i].size * (i + 1)
+            ].reshape(parameters[i].shape)
+        return parameters
+
+    def __hash__(self):
+        return hash((self.n_parameters, self.n_elec))
+
+
+@dataclass
 class nn(wave_function):
     """General neural network wave function
 
@@ -1046,8 +1107,8 @@ def apply_excitation_ee(
     walker_copy = walker.copy()
     i_pos = jnp.array(lattice.sites)[excitation["idx"][1]]
     a_pos = jnp.array(lattice.sites)[excitation["idx"][2]]
-    walker_copy = walker_copy.at[(excitation["idx"][0], *i_pos)].set(0)
-    walker_copy = walker_copy.at[(excitation["idx"][0], *a_pos)].set(1)
+    walker_copy = walker_copy.at[(excitation["idx"][0], *i_pos)].add(-1)
+    walker_copy = walker_copy.at[(excitation["idx"][0], *a_pos)].add(1)
     return walker_copy
 
 
@@ -1171,11 +1232,11 @@ class nn_complex(wave_function):
         )
         inputs = self.input_adapter(new_walker, lattice)
         outputs_r = jnp.array(
-            vmap(self.nn_apply_r, in_axes=(None, 0))(parameters, inputs + 0.0j),
+            vmap(self.nn_apply_r, in_axes=(None, 0))(parameters[0], inputs + 0.0j),
             dtype="complex64",
         )
         outputs_phi = jnp.array(
-            vmap(self.nn_apply_phi, in_axes=(None, 0))(parameters, inputs + 0.0j),
+            vmap(self.nn_apply_phi, in_axes=(None, 0))(parameters[1], inputs + 0.0j),
             dtype="complex64",
         )
         return jnp.exp(
