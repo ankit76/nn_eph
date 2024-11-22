@@ -241,6 +241,7 @@ class two_dimensional_grid:
     n_sites: Optional[int] = None
     hop_signs: Sequence = (-1.0, -1.0, 1.0, 1.0)
     coord_num: int = 4
+    sublattice_mask: Optional[Sequence] = None
 
     def __post_init__(self):
         self.shape = (self.l_y, self.l_x)
@@ -255,6 +256,14 @@ class two_dimensional_grid:
         self.shell_distances = tuple(distances)
         self.sites = tuple(
             [(i // self.l_x, i % self.l_x) for i in range(self.l_x * self.l_y)]
+        )
+        self.sublattice_mask = tuple(
+            (
+                tuple(True if i % 2 == 0 else False for i in range(self.l_x))
+                if j % 2 == 0
+                else tuple(False if i % 2 == 0 else True for i in range(self.l_x))
+            )
+            for j in range(self.l_y)
         )
 
         bond_distances = []
@@ -302,8 +311,8 @@ class two_dimensional_grid:
         # if isinstance(walker, list):
         #     # TODO: this is a bit hacky
         #     walker = walker[0]
-        walker_a = walker[::2, ::2]
-        return (-1) ** jnp.sum(jnp.where(walker_a > 0, 1, 0))
+        sublattice_walker = walker * jnp.array(self.sublattice_mask)
+        return (-1) ** jnp.sum(jnp.where(sublattice_walker > 0, 1, 0))
 
     def get_symm_fac(self, pos, k):
         return (

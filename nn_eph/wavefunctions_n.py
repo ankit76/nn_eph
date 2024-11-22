@@ -339,7 +339,7 @@ class t_projected_state(wave_function):
 
     state: wave_function
     walker_translator: Callable
-    excitation_translator: Callable
+    excitation_translator: Callable = lambda x: x
     n_parameters: int = 1
     k: Optional[Tuple] = None
     symm_factors: Optional[Tuple] = None
@@ -348,7 +348,7 @@ class t_projected_state(wave_function):
         self,
         state: wave_function,
         walker_translator: Callable,
-        excitation_translator: Callable,
+        excitation_translator: Callable = lambda x: x,
         n_parameters: Optional[int] = None,
         k: Optional[Tuple] = None,
         symm_factors: Optional[Tuple] = None,
@@ -1009,12 +1009,15 @@ class nn(wave_function):
         Number of parameters in the wave function
     input_adapter : Callable
         Function to get the input for the NN
+    sign_fun: Callable
+        Function to calculate the sign of the wave function
     """
 
     nn_apply: Callable
-    apply_excitation: Callable
     n_parameters: int
+    apply_excitation: Callable = lambda x, y, z: x
     input_adapter: Callable = lambda x, y: x.reshape((1, *x.shape))
+    sign_fun: Callable = lambda x, y: 1.0
 
     @partial(jit, static_argnums=(0, 3))
     def build_walker_data(
@@ -1050,7 +1053,8 @@ class nn(wave_function):
             vmap(self.nn_apply, in_axes=(None, 0))(parameters, inputs + 0.0j),
             dtype="complex64",
         )
-        return jsp.special.logsumexp(outputs, axis=0)[0]
+        sign = self.sign_fun(walker_data["walker_occ"], lattice) + 0.0j
+        return jsp.special.logsumexp(outputs, axis=0)[0] + jnp.log(sign)
 
     @partial(jit, static_argnums=(0, 4))
     def calc_overlap_ratio(

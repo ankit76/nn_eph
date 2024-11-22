@@ -96,7 +96,6 @@ class heisenberg:
             cumulative_ratios, random_number * cumulative_ratios[-1]
         )
 
-        # import jax
         # jax.debug.print("\nwalker: {}", walker)
         # jax.debug.print("overlap: {}", overlap)
         # # jax.debug.print('overlap_gradient: {}', overlap_gradient)
@@ -112,6 +111,8 @@ class heisenberg:
         i2 = neighbors[1]
         walker = walker.at[(*i1,)].set(-walker[(*i1,)])
         walker = walker.at[(*i2,)].set(-walker[(*i2,)])
+
+        # jax.debug.print("new_walker: {}", walker)
 
         return energy, qp_weight, overlap_gradient, weight, walker, jnp.exp(overlap)
 
@@ -193,19 +194,19 @@ class heisenberg:
             i2 = neighbors[1]
 
             # s1+ s2-
-            new_walker = walker.at[i1].set(0.5)
-            new_walker = new_walker.at[i2].set(-0.5)
+            new_walker = walker.at[(*i1,)].set(0.5)
+            new_walker = new_walker.at[(*i2,)].set(-0.5)
             new_walker_data = wave.build_walker_data(new_walker, parameters, lattice)
             # new_overlap = (
-            #     (walker[i1] == -0.5)
-            #     * (walker[i2] == 0.5)
+            #     (walker[(*i1,)] == -0.5)
+            #     * (walker[(*i2,)] == 0.5)
             #     * wave.calc_overlap(new_walker, parameters, lattice)
             # )
             new_overlap = new_walker_data["log_overlap"]
             new_sign = self.get_marshall_sign(new_walker, lattice)
             ratio_1 = (
-                (walker[i1] == -0.5)
-                * (walker[i2] == 0.5)
+                (walker[(*i1,)] == -0.5)
+                * (walker[(*i2,)] == 0.5)
                 * jnp.exp(new_overlap - overlap)
                 * new_sign
             )
@@ -221,19 +222,19 @@ class heisenberg:
             prob_ratio_1 = new_prob / prob
 
             # s1- s2+
-            new_walker = walker.at[i1].set(-0.5)
-            new_walker = new_walker.at[i2].set(0.5)
+            new_walker = walker.at[(*i1,)].set(-0.5)
+            new_walker = new_walker.at[(*i2,)].set(0.5)
             new_walker_data = wave.build_walker_data(new_walker, parameters, lattice)
             # new_overlap = (
-            #     (walker[i1] == 0.5)
-            #     * (walker[i2] == -0.5)
+            #     (walker[(*i1,)] == 0.5)
+            #     * (walker[(*i2,)] == -0.5)
             #     * wave.calc_overlap(new_walker, parameters, lattice)
             # )
             new_overlap = new_walker_data["log_overlap"]
             new_sign = self.get_marshall_sign(new_walker, lattice)
             ratio_2 = (
-                (walker[i1] == 0.5)
-                * (walker[i2] == -0.5)
+                (walker[(*i1,)] == 0.5)
+                * (walker[(*i2,)] == -0.5)
                 * jnp.exp(new_overlap - overlap)
                 * new_sign
             )
@@ -276,8 +277,8 @@ class heisenberg:
         neighbors = lattice.get_neighboring_sites(jnp.array(lattice.bonds)[bond])
         i1 = neighbors[0]
         i2 = neighbors[1]
-        walker = walker.at[i1].set(-walker[i1])
-        walker = walker.at[i2].set(-walker[i2])
+        walker = walker.at[(*i1,)].set(-walker[(*i1,)])
+        walker = walker.at[(*i2,)].set(-walker[(*i2,)])
 
         return (
             energy,
@@ -309,11 +310,11 @@ class heisenberg_bond:
         random_number: float,
     ):
         spins = walker[0]
-        phonons = walker[1]
+        phonons = walker[1:]
         n_bonds = len(lattice.bonds)
 
         walker_data = wave.build_walker_data(walker, parameters, lattice)
-        overlap = wave.calc_overlap(walker_data, parameters, lattice)
+        overlap = walker_data["log_overlap"]
         overlap_gradient = wave.calc_overlap_gradient(walker_data, parameters, lattice)
 
         # qp_weight
@@ -324,21 +325,27 @@ class heisenberg_bond:
         i2 = neighbors[1]
         # bond_i_r = lattice.bonds[n_bonds // 2]
         # qp_weight = spins[i1]
-        qp_weight = spins[i1] * spins[i2]
+        qp_weight = spins[(*i1,)] * spins[(*i2,)]
 
-        new_spins = spins.at[i1].set(0.5)
-        new_spins = new_spins.at[i2].set(-0.5)
-        new_overlap = wave.calc_overlap([new_spins, phonons], parameters, lattice)
+        new_walker = walker.at[(0, *i1)].set(0.5)
+        new_walker = new_walker.at[(0, *i2)].set(-0.5)
+        new_walker_data = wave.build_walker_data(new_walker, parameters, lattice)
+        new_overlap = new_walker_data["log_overlap"]
         ratio_2 = (
-            (spins[i1] == -0.5) * (spins[i2] == 0.5) * jnp.exp(new_overlap - overlap)
+            (spins[(*i1,)] == -0.5)
+            * (spins[(*i2,)] == 0.5)
+            * jnp.exp(new_overlap - overlap)
         )
         qp_weight += ratio_2 / 2
 
-        new_spins = spins.at[i1].set(-0.5)
-        new_spins = new_spins.at[i2].set(0.5)
-        new_overlap = wave.calc_overlap([new_spins, phonons], parameters, lattice)
+        new_walker = walker.at[(0, *i1)].set(-0.5)
+        new_walker = new_walker.at[(0, *i2)].set(0.5)
+        new_walker_data = wave.build_walker_data(new_walker, parameters, lattice)
+        new_overlap = new_walker_data["log_overlap"]
         ratio_5 = (
-            (spins[i1] == 0.5) * (spins[i2] == -0.5) * jnp.exp(new_overlap - overlap)
+            (spins[(*i1,)] == 0.5)
+            * (spins[(*i2,)] == -0.5)
+            * jnp.exp(new_overlap - overlap)
         )
         qp_weight += ratio_5 / 2
 
@@ -378,113 +385,105 @@ class heisenberg_bond:
             neighbors = lattice.get_neighboring_sites(bond)
             i1 = neighbors[0]
             i2 = neighbors[1]
-            new_phonons_c = phonons.at[bond].set(phonons[bond][0] + 1)
-            new_phonons_a = phonons.at[bond].set(phonons[bond][0] - 1)
+            nph = phonons[(*bond,)]
+            sp1 = spins[(*i1,)]
+            sp2 = spins[(*i2,)]
+            new_phonons_c = phonons.at[(*bond,)].set(nph + 1)
+            new_phonons_a = phonons.at[(*bond,)].set(nph - 1)
             new_phonons_a = jnp.where(new_phonons_a < 0, 0, new_phonons_a)
+
+            new_walker_c = walker.at[1:].set(new_phonons_c)
+            new_walker_a = walker.at[1:].set(new_phonons_a)
 
             # s1z s2z
             # bare
-            carry += self.j * spins[i1] * spins[i2]
+            carry += self.j * sp1 * sp2
 
             # create phonon
-            new_overlap = (phonons[bond][0] < self.max_n_phonons) * wave.calc_overlap(
-                [spins, new_phonons_c], parameters, lattice
+            new_walker_data = wave.build_walker_data(new_walker_c, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
+            ratio_0 = (
+                (jnp.sum(phonons) < self.max_n_phonons)
+                * jnp.exp(new_overlap - overlap)
+                / (nph + 1) ** 0.5
             )
-            ratio_0 = jnp.exp(new_overlap - overlap) / (phonons[bond][0] + 1) ** 0.5
-            carry += (
-                self.j
-                * self.g
-                * (phonons[bond][0] + 1) ** 0.5
-                * ratio_0
-                * spins[i1]
-                * spins[i2]
-            )
+            carry += self.j * self.g * (nph + 1) ** 0.5 * ratio_0 * sp1 * sp2
 
             # annihilate phonon
-            new_overlap = (phonons[bond][0] > 0) * wave.calc_overlap(
-                [spins, new_phonons_a], parameters, lattice
-            )
-            ratio_1 = (phonons[bond][0]) ** 0.5 * jnp.exp(new_overlap - overlap)
-            carry += (
-                self.j
-                * self.g
-                * (phonons[bond][0]) ** 0.5
-                * ratio_1
-                * spins[i1]
-                * spins[i2]
-            )
+            new_walker_data = wave.build_walker_data(new_walker_a, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
+            ratio_1 = (nph > 0) * (nph) ** 0.5 * jnp.exp(new_overlap - overlap)
+            carry += self.j * self.g * (nph) ** 0.5 * ratio_1 * sp1 * sp2
 
             # s1+ s2-
             # bare
-            new_spins = spins.at[i1].set(0.5)
-            new_spins = new_spins.at[i2].set(-0.5)
-            new_overlap = wave.calc_overlap([new_spins, phonons], parameters, lattice)
-            ratio_2 = (
-                (spins[i1] == -0.5)
-                * (spins[i2] == 0.5)
-                * jnp.exp(new_overlap - overlap)
-            )
+            new_walker = walker.at[(0, *i1)].set(0.5)
+            new_walker = new_walker.at[(0, *i2)].set(-0.5)
+            new_walker_data = wave.build_walker_data(new_walker, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
+            ratio_2 = (sp1 == -0.5) * (sp2 == 0.5) * jnp.exp(new_overlap - overlap)
             carry += self.j * ratio_2 / 2
 
             # create phonon
-            new_overlap = (phonons[bond][0] < self.max_n_phonons) * wave.calc_overlap(
-                [new_spins, new_phonons_c], parameters, lattice
-            )
+            new_walker_c = new_walker_c.at[0].set(new_walker[0])
+            new_walker_data = wave.build_walker_data(new_walker_c, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
             ratio_3 = (
-                (spins[i1] == -0.5)
-                * (spins[i2] == 0.5)
+                (jnp.sum(phonons) < self.max_n_phonons)
+                * (sp1 == -0.5)
+                * (sp2 == 0.5)
                 * jnp.exp(new_overlap - overlap)
-                / (phonons[bond][0] + 1) ** 0.5
+                / (nph + 1) ** 0.5
             )
-            carry += self.j * self.g * (phonons[bond][0] + 1) ** 0.5 * ratio_3 / 2
+            carry += self.j * self.g * (nph + 1) ** 0.5 * ratio_3 / 2
 
             # annihilate phonon
-            new_overlap = (phonons[bond][0] > 0) * wave.calc_overlap(
-                [new_spins, new_phonons_a], parameters, lattice
-            )
+            new_walker_a = new_walker_a.at[0].set(new_walker[0])
+            new_walker_data = wave.build_walker_data(new_walker_a, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
             ratio_4 = (
-                (spins[i1] == -0.5)
-                * (spins[i2] == 0.5)
-                * (phonons[bond][0]) ** 0.5
+                (nph > 0)
+                * (sp1 == -0.5)
+                * (sp2 == 0.5)
+                * nph**0.5
                 * jnp.exp(new_overlap - overlap)
             )
-            carry += self.j * self.g * (phonons[bond][0]) ** 0.5 * ratio_4 / 2
+            carry += self.j * self.g * nph**0.5 * ratio_4 / 2
 
             # s1- s2+
             # bare
-            new_spins = spins.at[i1].set(-0.5)
-            new_spins = new_spins.at[i2].set(0.5)
-            new_overlap = wave.calc_overlap([new_spins, phonons], parameters, lattice)
-            ratio_5 = (
-                (spins[i1] == 0.5)
-                * (spins[i2] == -0.5)
-                * jnp.exp(new_overlap - overlap)
-            )
+            new_walker = walker.at[(0, *i1)].set(-0.5)
+            new_walker = new_walker.at[(0, *i2)].set(0.5)
+            new_walker_data = wave.build_walker_data(new_walker, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
+            ratio_5 = (sp1 == 0.5) * (sp2 == -0.5) * jnp.exp(new_overlap - overlap)
             carry += self.j * ratio_5 / 2
 
             # create phonon
-            new_overlap = (phonons[bond][0] < self.max_n_phonons) * wave.calc_overlap(
-                [new_spins, new_phonons_c], parameters, lattice
-            )
+            new_walker_c = new_walker_c.at[0].set(new_walker[0])
+            new_walker_data = wave.build_walker_data(new_walker_c, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
             ratio_6 = (
-                (spins[i1] == 0.5)
-                * (spins[i2] == -0.5)
+                (jnp.sum(phonons) < self.max_n_phonons)
+                * (sp1 == 0.5)
+                * (sp2 == -0.5)
                 * jnp.exp(new_overlap - overlap)
-                / (phonons[bond][0] + 1) ** 0.5
+                / (nph + 1) ** 0.5
             )
-            carry += self.j * self.g * (phonons[bond][0] + 1) ** 0.5 * ratio_6 / 2
+            carry += self.j * self.g * (nph + 1) ** 0.5 * ratio_6 / 2
 
             # annihilate phonon
-            new_overlap = (phonons[bond][0] > 0) * wave.calc_overlap(
-                [new_spins, new_phonons_a], parameters, lattice
-            )
+            new_walker_a = new_walker_a.at[0].set(new_walker[0])
+            new_walker_data = wave.build_walker_data(new_walker_a, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
             ratio_7 = (
-                (spins[i1] == 0.5)
-                * (spins[i2] == -0.5)
-                * (phonons[bond][0]) ** 0.5
+                (nph > 0)
+                * (sp1 == 0.5)
+                * (sp2 == -0.5)
+                * nph**0.5
                 * jnp.exp(new_overlap - overlap)
             )
-            carry += self.j * self.g * (phonons[bond][0]) ** 0.5 * ratio_7 / 2
+            carry += self.j * self.g * nph**0.5 * ratio_7 / 2
 
             return carry, (
                 ratio_0,
@@ -522,12 +521,313 @@ class heisenberg_bond:
         excitation_type = new_ind // n_bonds
         spin_change = jnp.array([0, 0, 1, 1, 1, -1, -1, -1])[excitation_type]
         phonon_change = jnp.array([1, -1, 0, 1, -1, 0, 1, -1])[excitation_type]
-        walker[0] = walker[0].at[i1].set(walker[0][i1] + spin_change)
-        walker[0] = walker[0].at[i2].set(walker[0][i2] - spin_change)
-        walker[1] = walker[1].at[bond].set(walker[1][bond] + phonon_change)
-        walker[1] = jnp.where(walker[1] < 0, 0, walker[1])
+        walker = walker.at[(0, *i1)].set(walker[(0, *i1)] + spin_change)
+        walker = walker.at[(0, *i2)].set(walker[(0, *i2)] - spin_change)
+        phonons = phonons.at[(*bond,)].set(phonons[(*bond,)] + phonon_change)
+        phonons = jnp.where(phonons < 0, 0, phonons)
+        walker = walker.at[1:].set(phonons)
+
+        # jax.debug.print("new_walker: {}", walker)
 
         return energy, qp_weight, overlap_gradient, weight, walker, jnp.exp(overlap)
+
+    @partial(jit, static_argnums=(0, 3, 4))
+    def sf_q(
+        self, walker, parameters: Any, wave: wave_function, lattice: Any
+    ) -> jnp.array:
+        sz_i = walker[0]
+        sz_q = jnp.abs(jnp.fft.fftn(sz_i, norm="ortho")) ** 2
+        return jnp.array([sz_q, sz_q])
+
+    @partial(jit, static_argnums=(0, 3, 4))
+    def local_energy_and_update_lr(
+        self,
+        walker: jax.Array,
+        parameters: Any,
+        wave: t_projected_state,
+        lattice,
+        random_number: float,
+        parameters_copy: Any,
+    ):
+        """Calculate the local energy of a walker and update it using lr sampling
+
+        Parameters
+        ----------
+        walker : Sequence
+            walker spin phonon configuration
+        parameters : Any
+            Parameters of the wavefunction
+        wave : Any
+            Wave function
+        lattice : Any
+            Lattice
+        random_number : float
+            Random number used for MC update
+        parameters_copy : Any
+            Workaround for nans in local energy gradients
+
+        Returns
+        -------
+        Tuple
+            Tuple of local energy, scalar property, overlap_gradient_ratio, weight, updated_walker, overlap
+        """
+
+        spins = walker[0]
+        phonons = walker[1:]
+        n_bonds = len(lattice.bonds)
+
+        walker_data = wave.build_walker_data(walker, parameters, lattice)
+        overlap = walker_data["log_overlap"]
+        overlap_gradient = wave.calc_overlap_gradient(walker_data, parameters, lattice)
+        prob = (
+            jnp.abs(jnp.exp(overlap)) ** 2
+            + (jnp.abs(overlap_gradient * jnp.exp(overlap)) ** 2).sum()
+        )
+        qp_weight = 0.0
+
+        # assuming this will always be used with t_projected_state
+        # calculating overlap with k=0 state
+        overlaps = jnp.exp(walker_data["log_overlaps"])
+        overlap_0 = jnp.sum(overlaps)
+        k_factors = jnp.exp(-jnp.array(wave.trans_factors))
+        spin_i = walker[0].reshape(-1)
+        spin_q = jnp.sum(k_factors * spin_i) / jnp.sqrt(lattice.n_sites)
+        vector_property = (
+            jnp.array([spin_q, spin_q, 1.0]) * overlap_0 / jnp.exp(overlap)
+        )  # these are < w | S_q | psi_0 > / < w | psi_q >, < w | N_q | psi_0 > / < w | psi_q >, and < w | psi_0 > / < w | psi_q >
+
+        # diagonal
+        energy = self.omega * jnp.sum(phonons) + 0.0j
+
+        def scanned_fun(carry, bond):
+            neighbors = lattice.get_neighboring_sites(bond)
+            i1 = neighbors[0]
+            i2 = neighbors[1]
+            nph = phonons[(*bond,)]
+            sp1 = spins[(*i1,)]
+            sp2 = spins[(*i2,)]
+            new_phonons_c = phonons.at[(*bond,)].set(nph + 1)
+            new_phonons_a = phonons.at[(*bond,)].set(nph - 1)
+            new_phonons_a = jnp.where(new_phonons_a < 0, 0, new_phonons_a)
+
+            new_walker_c = walker.at[1:].set(new_phonons_c)
+            new_walker_a = walker.at[1:].set(new_phonons_a)
+
+            # s1z s2z
+            # bare
+            carry += self.j * sp1 * sp2
+
+            # create phonon
+            new_walker_data = wave.build_walker_data(new_walker_c, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
+            ratio_0 = (
+                (jnp.sum(phonons) < self.max_n_phonons)
+                * jnp.exp(new_overlap - overlap)
+                / (nph + 1) ** 0.5
+            )
+            carry += self.j * self.g * (nph + 1) ** 0.5 * ratio_0 * sp1 * sp2
+            new_overlap_gradient = wave.calc_overlap_gradient(
+                new_walker_data, parameters_copy, lattice
+            )
+            new_overlap = jnp.exp(overlap) * ratio_0
+            new_prob = (
+                jnp.abs(new_overlap) ** 2.0
+                + (jnp.abs(new_overlap_gradient * new_overlap) ** 2.0).sum()
+            )
+            prob_ratio_0 = new_prob / prob
+
+            # annihilate phonon
+            new_walker_data = wave.build_walker_data(new_walker_a, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
+            ratio_1 = (nph > 0) * (nph) ** 0.5 * jnp.exp(new_overlap - overlap)
+            carry += self.j * self.g * (nph) ** 0.5 * ratio_1 * sp1 * sp2
+            new_overlap_gradient = wave.calc_overlap_gradient(
+                new_walker_data, parameters_copy, lattice
+            )
+            new_overlap = jnp.exp(overlap) * ratio_1
+            new_prob = (
+                jnp.abs(new_overlap) ** 2.0
+                + (jnp.abs(new_overlap_gradient * new_overlap) ** 2.0).sum()
+            )
+            prob_ratio_1 = new_prob / prob
+
+            # s1+ s2-
+            # bare
+            new_walker = walker.at[(0, *i1)].set(0.5)
+            new_walker = new_walker.at[(0, *i2)].set(-0.5)
+            new_walker_data = wave.build_walker_data(new_walker, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
+            ratio_2 = (sp1 == -0.5) * (sp2 == 0.5) * jnp.exp(new_overlap - overlap)
+            carry += self.j * ratio_2 / 2
+            new_overlap_gradient = wave.calc_overlap_gradient(
+                new_walker_data, parameters_copy, lattice
+            )
+            new_overlap = jnp.exp(overlap) * ratio_2
+            new_prob = (
+                jnp.abs(new_overlap) ** 2.0
+                + (jnp.abs(new_overlap_gradient * new_overlap) ** 2.0).sum()
+            )
+            prob_ratio_2 = new_prob / prob
+
+            # create phonon
+            new_walker_c = new_walker_c.at[0].set(new_walker[0])
+            new_walker_data = wave.build_walker_data(new_walker_c, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
+            ratio_3 = (
+                (jnp.sum(phonons) < self.max_n_phonons)
+                * (sp1 == -0.5)
+                * (sp2 == 0.5)
+                * jnp.exp(new_overlap - overlap)
+                / (nph + 1) ** 0.5
+            )
+            carry += self.j * self.g * (nph + 1) ** 0.5 * ratio_3 / 2
+            new_overlap_gradient = wave.calc_overlap_gradient(
+                new_walker_data, parameters_copy, lattice
+            )
+            new_overlap = jnp.exp(overlap) * ratio_3
+            new_prob = (
+                jnp.abs(new_overlap) ** 2.0
+                + (jnp.abs(new_overlap_gradient * new_overlap) ** 2.0).sum()
+            )
+            prob_ratio_3 = new_prob / prob
+
+            # annihilate phonon
+            new_walker_a = new_walker_a.at[0].set(new_walker[0])
+            new_walker_data = wave.build_walker_data(new_walker_a, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
+            ratio_4 = (
+                (nph > 0)
+                * (sp1 == -0.5)
+                * (sp2 == 0.5)
+                * nph**0.5
+                * jnp.exp(new_overlap - overlap)
+            )
+            carry += self.j * self.g * nph**0.5 * ratio_4 / 2
+            new_overlap_gradient = wave.calc_overlap_gradient(
+                new_walker_data, parameters_copy, lattice
+            )
+            new_overlap = jnp.exp(overlap) * ratio_4
+            new_prob = (
+                jnp.abs(new_overlap) ** 2.0
+                + (jnp.abs(new_overlap_gradient * new_overlap) ** 2.0).sum()
+            )
+            prob_ratio_4 = new_prob / prob
+
+            # s1- s2+
+            # bare
+            new_walker = walker.at[(0, *i1)].set(-0.5)
+            new_walker = new_walker.at[(0, *i2)].set(0.5)
+            new_walker_data = wave.build_walker_data(new_walker, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
+            ratio_5 = (sp1 == 0.5) * (sp2 == -0.5) * jnp.exp(new_overlap - overlap)
+            carry += self.j * ratio_5 / 2
+            new_overlap_gradient = wave.calc_overlap_gradient(
+                new_walker_data, parameters_copy, lattice
+            )
+            new_overlap = jnp.exp(overlap) * ratio_5
+            new_prob = (
+                jnp.abs(new_overlap) ** 2.0
+                + (jnp.abs(new_overlap_gradient * new_overlap) ** 2.0).sum()
+            )
+            prob_ratio_5 = new_prob / prob
+
+            # create phonon
+            new_walker_c = new_walker_c.at[0].set(new_walker[0])
+            new_walker_data = wave.build_walker_data(new_walker_c, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
+            ratio_6 = (
+                (jnp.sum(phonons) < self.max_n_phonons)
+                * (sp1 == 0.5)
+                * (sp2 == -0.5)
+                * jnp.exp(new_overlap - overlap)
+                / (nph + 1) ** 0.5
+            )
+            carry += self.j * self.g * (nph + 1) ** 0.5 * ratio_6 / 2
+            new_overlap_gradient = wave.calc_overlap_gradient(
+                new_walker_data, parameters_copy, lattice
+            )
+            new_overlap = jnp.exp(overlap) * ratio_6
+            new_prob = (
+                jnp.abs(new_overlap) ** 2.0
+                + (jnp.abs(new_overlap_gradient * new_overlap) ** 2.0).sum()
+            )
+            prob_ratio_6 = new_prob / prob
+
+            # annihilate phonon
+            new_walker_a = new_walker_a.at[0].set(new_walker[0])
+            new_walker_data = wave.build_walker_data(new_walker_a, parameters, lattice)
+            new_overlap = new_walker_data["log_overlap"]
+            ratio_7 = (
+                (nph > 0)
+                * (sp1 == 0.5)
+                * (sp2 == -0.5)
+                * nph**0.5
+                * jnp.exp(new_overlap - overlap)
+            )
+            carry += self.j * self.g * nph**0.5 * ratio_7 / 2
+            new_overlap_gradient = wave.calc_overlap_gradient(
+                new_walker_data, parameters_copy, lattice
+            )
+            new_overlap = jnp.exp(overlap) * ratio_7
+            new_prob = (
+                jnp.abs(new_overlap) ** 2.0
+                + (jnp.abs(new_overlap_gradient * new_overlap) ** 2.0).sum()
+            )
+            prob_ratio_7 = new_prob / prob
+
+            return carry, (
+                prob_ratio_0,
+                prob_ratio_1,
+                prob_ratio_2,
+                prob_ratio_3,
+                prob_ratio_4,
+                prob_ratio_5,
+                prob_ratio_6,
+                prob_ratio_7,
+            )
+
+        energy, prob_ratios = lax.scan(scanned_fun, energy, jnp.array(lattice.bonds))
+        ratios = jnp.concatenate(prob_ratios)
+
+        # update walker
+        cumulative_ratios = jnp.cumsum(jnp.abs(ratios) ** 0.5)
+        weight = 1 / cumulative_ratios[-1]
+        new_ind = jnp.searchsorted(
+            cumulative_ratios, random_number * cumulative_ratios[-1]
+        )
+
+        # jax.debug.print("\nwalker: {}", walker)
+        # jax.debug.print("overlap: {}", overlap)
+        # # jax.debug.print('overlap_gradient: {}', overlap_gradient)
+        # jax.debug.print("weight: {}", weight)
+        # jax.debug.print("ratios: {}", ratios)
+        # jax.debug.print("energy: {}", energy)
+        # jax.debug.print("random_number: {}", random_number)
+        # jax.debug.print("new_ind: {}\n", new_ind)
+
+        bond = jnp.array(lattice.bonds)[new_ind % n_bonds]
+        neighbors = lattice.get_neighboring_sites(bond)
+        i1 = neighbors[0]
+        i2 = neighbors[1]
+        excitation_type = new_ind // n_bonds
+        spin_change = jnp.array([0, 0, 1, 1, 1, -1, -1, -1])[excitation_type]
+        phonon_change = jnp.array([1, -1, 0, 1, -1, 0, 1, -1])[excitation_type]
+        walker = walker.at[(0, *i1)].set(walker[(0, *i1)] + spin_change)
+        walker = walker.at[(0, *i2)].set(walker[(0, *i2)] - spin_change)
+        phonons = phonons.at[(*bond,)].set(phonons[(*bond,)] + phonon_change)
+        phonons = jnp.where(phonons < 0, 0, phonons)
+        walker = walker.at[1:].set(phonons)
+
+        # jax.debug.print("new_walker: {}", walker)
+
+        return (
+            energy,
+            vector_property,
+            overlap_gradient,
+            weight,
+            walker,
+            jnp.exp(overlap),
+        )
 
     def __hash__(self):
         return hash((self.omega, self.g, self.j, self.max_n_phonons))
