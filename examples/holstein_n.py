@@ -125,14 +125,14 @@ def apply_excitation_eph(walker, excitation, lattice):
 
 
 model_j_r = models.MLP(
-    [16, 8, 4, 1],
+    [32, 1],
     param_dtype=jnp.complex64,
     kernel_init=models.complex_kernel_init,
     # kernel_init=jax.nn.initializers.zeros,
     activation=jax.nn.relu,
 )
 model_j_phi = models.MLP(
-    [16, 8, 4, 1],
+    [32, 1],
     param_dtype=jnp.complex64,
     kernel_init=models.complex_kernel_init,
     # kernel_init=jax.nn.initializers.zeros,
