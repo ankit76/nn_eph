@@ -150,7 +150,7 @@ class continuous_time:
                 / carry[1]
             )
             carry[5] += weight * (jnp.real(qp_weight) - carry[5]) / carry[1]
-            return carry, (jnp.real(energy), qp_weight, weight)
+            return carry, (jnp.real(energy), jnp.real(qp_weight), weight)
 
         weight = 0.0
         energy = 0.0
