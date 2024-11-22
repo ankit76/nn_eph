@@ -116,7 +116,7 @@ def test_product_state():
     nn_parameters = model_j.init(random.PRNGKey(891), model_input, mutable=True)
     n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters))
     nn_j = wavefunctions_n.nn(
-        model_j.apply, wavefunctions_n.apply_excitation_ee, n_nn_parameters
+        model_j.apply, n_nn_parameters, wavefunctions_n.apply_excitation_ee
     )
 
     parameters = [nn_parameters, ref_parameters]
@@ -158,7 +158,7 @@ def test_t_projected_state():
     nn_parameters = model_j.init(random.PRNGKey(891), model_input, mutable=True)
     n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters))
     nn_j = wavefunctions_n.nn(
-        model_j.apply, wavefunctions_n.apply_excitation_ee, n_nn_parameters
+        model_j.apply, n_nn_parameters, wavefunctions_n.apply_excitation_ee
     )
 
     parameters = [nn_parameters, ref_parameters]

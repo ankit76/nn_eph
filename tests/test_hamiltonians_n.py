@@ -61,8 +61,8 @@ def test_hubbard_holstein():
     n_nn_parameters = sum(x.size for x in tree_util.tree_leaves(nn_parameters))
     nn_j = wavefunctions_n.nn(
         model_j.apply,
-        wavefunctions_n.apply_excitation_eph,
         n_nn_parameters,
+        wavefunctions_n.apply_excitation_eph,
         input_adapter=wavefunctions_n.input_adapter_t,
     )
 

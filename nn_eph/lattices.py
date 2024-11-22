@@ -233,12 +233,12 @@ class one_dimensional_chain:
 class two_dimensional_grid:
     l_x: int
     l_y: int
-    shape: Optional[tuple] = None
+    shape: tuple = (0, 0)
     shell_distances: Optional[Sequence] = None
     bond_shell_distances: Optional[Sequence] = None
     sites: Optional[Sequence] = None
     bonds: Optional[Sequence] = None
-    n_sites: Optional[int] = None
+    n_sites: int = 0
     hop_signs: Sequence = (-1.0, -1.0, 1.0, 1.0)
     coord_num: int = 4
     sublattice_mask: Optional[Sequence] = None
