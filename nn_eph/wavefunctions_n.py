@@ -368,7 +368,7 @@ class t_projected_state(wave_function):
                     2.0j
                     * np.pi
                     * np.array(self.k)
-                    @ np.array(site)
+                    * np.array(site)
                     / np.array(lattice.shape)
                 )
                 for site in lattice.sites
