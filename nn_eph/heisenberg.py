@@ -170,7 +170,7 @@ class heisenberg:
 
         def z_ene(bond):
             neighbors = lattice.get_neighboring_sites(bond)
-            return self.j * walker[neighbors[0]] * walker[neighbors[1]]
+            return self.j * walker[(*neighbors[0],)] * walker[(*neighbors[1],)]
 
         # diagonal
         energy = jnp.sum(vmap(z_ene)(jnp.array(lattice.bonds))) + 0.0j

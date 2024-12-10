@@ -21,11 +21,14 @@ class hubbard:
         Number of orbitals
     n_elec : Sequence
         Number of electrons
+    antiperiodic: bool
+        Antiperiodic boundary conditions
     """
 
     u: float
     n_orbs: int
     n_elec: Sequence
+    antiperiodic: bool = False
 
     @partial(jit, static_argnums=(0,))
     def sz(
@@ -109,14 +112,15 @@ class hubbard:
         # excitation["idx"]: [ spin, i_rel, a_abs ]
         # carry: [ energy, spin, elec_pos, occ_idx ]
         def scanned_fun(carry, x):
-            neighbor_site_num = lattice.get_site_num(x)
+            neighbor, neighbor_edge_bond = x
+            neighbor_site_num = lattice.get_site_num(neighbor)
             excitation = {}
             excitation["sm_idx"] = jnp.array((carry[1], carry[3], neighbor_site_num))
             excitation["idx"] = jnp.array((carry[1], carry[2], neighbor_site_num))
-            ratio = (walker[carry[1]][(*x,)] == 0) * wave.calc_overlap_ratio(
+            ratio = (walker[carry[1]][(*neighbor,)] == 0) * wave.calc_overlap_ratio(
                 walker_data, excitation, parameters, lattice
             )
-            carry[0] -= ratio
+            carry[0] -= ratio * (1 - 2 * neighbor_edge_bond * self.antiperiodic)
             return carry, ratio
 
         # scan over electrons
@@ -125,7 +129,10 @@ class hubbard:
             [carry[0], _, _, _], hop_ratios = lax.scan(
                 scanned_fun,
                 [carry[0], carry[1], lattice.get_site_num(x), carry[2]],
-                lattice.get_nearest_neighbors(x),
+                (
+                    lattice.get_nearest_neighbors(x),
+                    lattice.get_nearest_neighbors_edge_bond(x),
+                ),
             )
             carry[2] += 1
             return carry, hop_ratios
@@ -252,24 +259,25 @@ class hubbard:
         # excitation["idx"]: [ spin, i_rel, a_abs ]
         # carry: [ energy, spin, elec_id, occ_idx, elec_pos ]
         def scanned_fun(carry, x):
-            neighbor_site_num = lattice.get_site_num(x)
+            neighbor, neighbor_edge_bond = x
+            neighbor_site_num = lattice.get_site_num(neighbor)
             excitation = {}
             excitation["sm_idx"] = jnp.array((carry[1], carry[3], neighbor_site_num))
             excitation["idx"] = jnp.array((carry[1], carry[2], neighbor_site_num))
-            ratio = (walker[carry[1]][(*x,)] == 0) * wave.calc_overlap_ratio(
+            ratio = (walker[carry[1]][(*neighbor,)] == 0) * wave.calc_overlap_ratio(
                 walker_data, excitation, parameters, lattice
             )
-            carry[0] -= ratio
+            carry[0] -= ratio * (1 - 2 * neighbor_edge_bond * self.antiperiodic)
             new_walker = walker.at[(carry[1], *carry[4])].set(0)
-            new_walker = new_walker.at[(carry[1], *x)].set(1)
+            new_walker = new_walker.at[(carry[1], *neighbor)].set(1)
             new_walker_data = wave.build_walker_data(
                 new_walker, parameters_copy, lattice
             )
             new_overlap_gradient = (
-                walker[carry[1]][(*x,)] == 0
+                walker[carry[1]][(*neighbor,)] == 0
             ) * wave.calc_overlap_gradient(new_walker_data, parameters_copy, lattice)
             new_overlap = ratio * jnp.exp(overlap)
-            new_prob = (walker[carry[1]][(*x,)] == 0) * (
+            new_prob = (walker[carry[1]][(*neighbor,)] == 0) * (
                 jnp.abs(new_overlap) ** 2.0
                 + (jnp.abs(new_overlap_gradient * new_overlap) ** 2.0).sum()
             )
@@ -284,7 +292,10 @@ class hubbard:
             [carry[0], _, _, _, _], hop_ratios = lax.scan(
                 scanned_fun,
                 [carry[0], carry[1], lattice.get_site_num(x), carry[2], x],
-                lattice.get_nearest_neighbors(x),
+                (
+                    lattice.get_nearest_neighbors(x),
+                    lattice.get_nearest_neighbors_edge_bond(x),
+                ),
             )
             carry[2] += 1
             return carry, hop_ratios
@@ -379,6 +390,7 @@ class hubbard_holstein:
     n_orbs: int
     n_elec: Sequence
     max_n_phonons: any = jnp.inf
+    antiperiodic: bool = False
 
     @partial(jit, static_argnums=(0, 3, 4))
     def sf_q(
@@ -459,16 +471,17 @@ class hubbard_holstein:
         # scan over neighbors of elec_pos
         # carry: [ energy, spin, elec_pos, idx ]
         def scanned_fun(carry, x):
-            neighbor_site_num = lattice.get_site_num(x)
+            neighbor, neighbor_edge_bond = x
+            neighbor_site_num = lattice.get_site_num(neighbor)
             excitation_ee = {}
             excitation_ee["sm_idx"] = jnp.array((carry[1], carry[3], neighbor_site_num))
             excitation_ee["idx"] = jnp.array((carry[1], carry[2], neighbor_site_num))
             excitation_ph = jnp.array((0, 0))
             excitation = {"ee": excitation_ee, "ph": excitation_ph}
-            ratio = (walker[carry[1]][(*x,)] == 0) * wave.calc_overlap_ratio(
+            ratio = (walker[carry[1]][(*neighbor,)] == 0) * wave.calc_overlap_ratio(
                 walker_data, excitation, parameters, lattice
             )
-            carry[0] -= ratio
+            carry[0] -= ratio * (1 - 2 * neighbor_edge_bond * self.antiperiodic)
             return carry, ratio
 
         # scan over electrons
@@ -477,7 +490,10 @@ class hubbard_holstein:
             [carry[0], _, _, _], hop_ratios = lax.scan(
                 scanned_fun,
                 [carry[0], carry[1], lattice.get_site_num(x), carry[2]],
-                lattice.get_nearest_neighbors(x),
+                (
+                    lattice.get_nearest_neighbors(x),
+                    lattice.get_nearest_neighbors_edge_bond(x),
+                ),
             )
             carry[2] += 1
             return carry, hop_ratios
@@ -657,26 +673,27 @@ class hubbard_holstein:
         # scan over neighbors of elec_pos
         # carry: [ energy, spin, elec_pos, occ_idx, elec_pos ]
         def scanned_fun(carry, x):
-            neighbor_site_num = lattice.get_site_num(x)
+            neighbor, neighbor_edge_bond = x
+            neighbor_site_num = lattice.get_site_num(neighbor)
             excitation_ee = {}
             excitation_ee["sm_idx"] = jnp.array((carry[1], carry[3], neighbor_site_num))
             excitation_ee["idx"] = jnp.array((carry[1], carry[2], neighbor_site_num))
             excitation_ph = jnp.array((0, 0))
             excitation = {"ee": excitation_ee, "ph": excitation_ph}
-            ratio = (walker[carry[1]][(*x,)] == 0) * wave.calc_overlap_ratio(
+            ratio = (walker[carry[1]][(*neighbor,)] == 0) * wave.calc_overlap_ratio(
                 walker_data, excitation, parameters, lattice
             )
-            carry[0] -= ratio
+            carry[0] -= ratio * (1 - 2 * neighbor_edge_bond * self.antiperiodic)
             new_walker = walker.at[(carry[1], *carry[4])].set(0)
-            new_walker = new_walker.at[(carry[1], *x)].set(1)
+            new_walker = new_walker.at[(carry[1], *neighbor)].set(1)
             new_walker_data = wave.build_walker_data(
                 new_walker, parameters_copy, lattice
             )
             new_overlap_gradient = (
-                walker[carry[1]][(*x,)] == 0
+                walker[carry[1]][(*neighbor,)] == 0
             ) * wave.calc_overlap_gradient(new_walker_data, parameters_copy, lattice)
             new_overlap = ratio * jnp.exp(overlap)
-            new_prob = (walker[carry[1]][(*x,)] == 0) * (
+            new_prob = (walker[carry[1]][(*neighbor,)] == 0) * (
                 jnp.abs(new_overlap) ** 2.0
                 + (jnp.abs(new_overlap_gradient * new_overlap) ** 2.0).sum()
             )
@@ -691,7 +708,10 @@ class hubbard_holstein:
             [carry[0], _, _, _, _], hop_ratios = lax.scan(
                 scanned_fun,
                 [carry[0], carry[1], lattice.get_site_num(x), carry[2], x],
-                lattice.get_nearest_neighbors(x),
+                (
+                    lattice.get_nearest_neighbors(x),
+                    lattice.get_nearest_neighbors_edge_bond(x),
+                ),
             )
             carry[2] += 1
             return carry, hop_ratios
@@ -840,7 +860,7 @@ class hubbard_holstein:
 
         # jax.debug.print("new_walker: {}", walker)
 
-        energy = jax.Array(jnp.where(jnp.isnan(energy), 0.0, energy))
+        energy = jnp.array(jnp.where(jnp.isnan(energy), 0.0, energy))
         energy = jnp.where(jnp.isinf(energy), 0.0, energy)
         weight = jnp.where(jnp.isnan(weight), 0.0, weight)
         weight = jnp.where(jnp.isinf(weight), 0.0, weight)
