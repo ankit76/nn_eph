@@ -413,6 +413,17 @@ class two_dimensional_grid:
         up = ((pos[0] - 1) % self.l_y, pos[1])
         return jnp.array([right, down, left, up])
 
+    @partial(jit, static_argnums=(0,))
+    def get_nearest_neighbors_edge_bond(self, pos):
+        return jnp.array(
+            [
+                pos[1] == (self.l_x - 1),
+                pos[0] == (self.l_y - 1),
+                pos[1] == 0,
+                pos[0] == 0,
+            ]
+        )
+
     # used in the ssh model
     @partial(jit, static_argnums=(0,))
     def get_nearest_neighbor_modes(self, pos):
