@@ -56,6 +56,9 @@ class not_MPI:
 def setup_jax():
     from jax import config
 
+    # breaking change in random number generation in jax v0.5
+    config.update("jax_threefry_partitionable", False)
+
     if nn_eph_config["use_gpu"] == True:
         config.update("jax_platform_name", "gpu")
         os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
