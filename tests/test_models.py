@@ -1,7 +1,7 @@
-import os
+from nn_eph import config
 
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
-# os.environ['JAX_ENABLE_X64'] = 'True'
+config.setup_jax()
+
 import pytest
 from jax import numpy as jnp
 from jax import random

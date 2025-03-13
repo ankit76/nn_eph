@@ -1,6 +1,9 @@
 import os
 
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
+from nn_eph import config
+
+config.setup_jax()
+
 import jax
 
 # os.environ['JAX_ENABLE_X64'] = 'True'
