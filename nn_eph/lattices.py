@@ -57,8 +57,6 @@ def frobenius(n, coefficients, target):
 
 def frobenius_0(n, coefficients, target):
     def backtrack(index, current_solution):
-        nonlocal solutions
-
         # Base case: when we have n integers in the solution
         if index == n:
             # Check if the current solution satisfies the Frobenius equation
