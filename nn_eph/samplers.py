@@ -125,9 +125,14 @@ class continuous_time:
         lattice,
         random_numbers,
         dev_thresh_fac=jnp.inf,
+        equilibration_random_numbers=None,
     ):
+        """Sample observables, optionally using independent equilibration draws."""
+        if equilibration_random_numbers is None:
+            equilibration_random_numbers = random_numbers
+
         # carry : [ walker, weight, energy, grad, lene_grad, qp_weight, dev_thresh, median_energy ]
-        def scanned_fun(carry, x):
+        def scanned_fun(carry, random_number):
             (
                 energy,
                 qp_weight,
@@ -136,7 +141,7 @@ class continuous_time:
                 carry[0],
                 _,
             ) = ham.local_energy_and_update(
-                carry[0], parameters, wave, lattice, random_numbers[x]
+                carry[0], parameters, wave, lattice, random_number
             )
             weight = (jnp.abs(energy - carry[7]) < carry[6]) * weight + 1.0e-8
             energy = jnp.where(weight > 1.0e-8, energy, carry[7])
@@ -160,7 +165,7 @@ class continuous_time:
         [walker, _, _, _, _, _, _, _], (energies_eq, _, _) = lax.scan(
             scanned_fun,
             [walker, weight, energy, gradient, lene_gradient, qp_weight, jnp.inf, 0.0],
-            jnp.arange(self.n_eql),
+            equilibration_random_numbers[: self.n_eql],
         )
 
         median_energy = jnp.median(energies_eq)
@@ -188,7 +193,7 @@ class continuous_time:
                 dev_thresh_fac * mdev,
                 median_energy,
             ],
-            jnp.arange(self.n_samples),
+            random_numbers[: self.n_samples],
         )
 
         # energy, gradient, lene_gradient are weighted
@@ -213,7 +218,12 @@ class continuous_time:
         lattice,
         random_numbers,
         dev_thresh_fac=jnp.inf,
+        equilibration_random_numbers=None,
     ):
+        """Sample LR matrices, optionally using independent equilibration draws."""
+        if equilibration_random_numbers is None:
+            equilibration_random_numbers = random_numbers
+
         def _local_energy_and_update_wrapper(x, y, z):
             if self.green_reweight:
                 energy, qp_weight, gradient, weight, walker, overlap = (
@@ -237,7 +247,7 @@ class continuous_time:
                     overlap,
                 ),
             ) = _local_energy_and_update_wrapper(
-                carry[0], parameters, random_numbers[x]
+                carry[0], parameters, equilibration_random_numbers[x]
             )
             weight = (jnp.abs(energy - carry[7]) < carry[6]) * weight + 1.0e-8
             energy = jnp.where(weight > 1.0e-8, energy, carry[7])
